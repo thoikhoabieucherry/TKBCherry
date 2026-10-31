@@ -1016,6 +1016,15 @@ test("progress UI exposes Stop while active and bridge disables it during best-e
   assert.match(body, /const bestEffortStopPending = window\.__TKB_RUST_PROGRESS_STATE\?\.bestEffortStopPending === true/);
   assert.match(body, /if\(btn && !window\.__AUTO_SORT_STOP_REQUESTED && !bestEffortStopPending && n < 100\)/);
   assert.match(body, /else if\(btn && bestEffortStopPending\)[\s\S]*?btn\.disabled = true/);
+  assert.match(body, /keepStopStatus/);
+  assert.match(body, /Đang nhận lịch tốt nhất/);
+  assert.match(body, /đang nhận \(phương án\|lịch\) tốt nhất\|đang áp lịch tốt nhất/);
+  // Soft-stop status must not be swallowed by the "Đang nhận..." routine hide.
+  const statusStart = plannerSource.indexOf("function fitPlannerMobileStatusMessage");
+  const statusEnd = plannerSource.indexOf("function _autoSortProgressYield", statusStart);
+  const statusBody = plannerSource.slice(statusStart, statusEnd);
+  assert.match(statusBody, /isSoftStopOrApply/);
+  assert.match(statusBody, /isRoutine && !isSoftStopOrApply/);
 
   const stopStart = bridgeSource.indexOf("function setBestEffortStopPending");
   const stopEnd = bridgeSource.indexOf("async function requestStopActiveSolve", stopStart);

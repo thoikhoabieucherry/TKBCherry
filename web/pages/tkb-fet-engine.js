@@ -154,6 +154,730 @@
 
   class FetTimetableEngine {
 
+    normConstraintStr(s){
+      return String(s ?? "").normalize("NFC").trim().replace(/\s+/g, " ").toLowerCase();
+    }
+
+    ensureConstraintSubjectIndex(){
+      if(this.__constraintSubjReady) return;
+      const data = this.data || {};
+      const ghepMap = new Map();
+      const ghepRows = Array.isArray(data.dayGhep) ? data.dayGhep : [];
+      for(const r of ghepRows){
+        if(!r || !r.ten) continue;
+        const mons = Array.isArray(r.mon) ? r.mon.map(x => String(x || "").trim()).filter(Boolean) : [];
+        if(!mons.length) continue;
+        const k = this.normConstraintStr(r.ten);
+        if(k && !ghepMap.has(k)) ghepMap.set(k, mons[0]);
+      }
+      this.__ghepRuleMap = ghepMap;
+
+      const parent = new Map();
+      const find = (x) => {
+        let r = x;
+        while(parent.get(r) !== r) r = parent.get(r);
+        let c = x;
+        while(c !== r){ const p = parent.get(c); parent.set(c, r); c = p; }
+        return r;
+      };
+      const union = (a, b) => {
+        const ra = find(a), rb = find(b);
+        if(ra !== rb) parent.set(ra, rb);
+      };
+      const addGroup = (vals) => {
+        const clean = vals.map(v => this.normConstraintStr(v)).filter(Boolean);
+        for(const v of clean){ if(!parent.has(v)) parent.set(v, v); }
+        for(let i = 1; i < clean.length; i++) union(clean[0], clean[i]);
+      };
+      const pools = [];
+      if(Array.isArray(data.monhoc)) pools.push(...data.monhoc);
+      if(Array.isArray(data.mon)) pools.push(...data.mon);
+      for(const m of pools){
+        if(!m || typeof m !== "object") continue;
+        addGroup([m.ten, m.mon, m.mamon, m.ma, m.ma2, m.id, m.key]);
+      }
+      ghepMap.forEach((base, ten) => addGroup([ten, base]));
+      const groups = new Map();
+      for(const k of parent.keys()){
+        const r = find(k);
+        if(!groups.has(r)) groups.set(r, new Set());
+        groups.get(r).add(k);
+      }
+      const lookup = new Map();
+      for(const [k] of parent){
+        lookup.set(k, groups.get(find(k)));
+      }
+      this.__subjAliasLookup = lookup;
+
+      const rawMon = Array.isArray(data.monhoc) && data.monhoc.length
+        ? data.monhoc
+        : (Array.isArray(data.mon) ? data.mon : []);
+      this.__canonicalSubjects = rawMon
+        .filter(m => m && (m.id || m.ten || m.ma || m.mon))
+        .map((m, idx) => ({
+          id: String(m.id ?? m.ma ?? m.ten ?? idx).trim(),
+          ten: String(m.ten ?? m.name ?? m.mon ?? m.id ?? idx).trim()
+        }));
+      this.__ruleSubjKeyCache = new Map();
+
+      const roomLocMap = new Map();
+      const rawPhong = Array.isArray(data.phong) ? data.phong : [];
+      for(const r of rawPhong){
+        if(!r || typeof r !== "object") continue;
+        const loc = this.normConstraintStr(r.diadiem ?? r.diaDiem ?? r.khu ?? r.location ?? "");
+        for(const k of [r.id, r.ma, r.ten, r.name]){
+          const nk = this.normConstraintStr(k);
+          if(nk) roomLocMap.set(nk, loc || nk);
+        }
+      }
+      this.__roomLocationMap = roomLocMap;
+      this.__constraintSubjReady = true;
+    }
+
+    getSubjectAliases(val){
+      this.ensureConstraintSubjectIndex();
+      const raw = typeof val === "object" ? this.extractMon(val) : String(val || "");
+      const cleaned = raw.includes(" - ") ? raw.split(" - ")[0].trim() : raw.trim();
+      const n = this.normConstraintStr(cleaned.replace(/^[!*]+|[!*]+$/g, "").replace(/\[fixed\]/gi, "").replace(/\[co_dinh\]/gi, ""));
+      if(!n) return new Set();
+      const base = this.__subjAliasLookup.get(n) || new Set([n]);
+      const ghepBase = this.__ghepRuleMap.get(n);
+      if(!ghepBase) return base;
+      const gNorm = this.normConstraintStr(ghepBase);
+      const extra = this.__subjAliasLookup.get(gNorm) || new Set([gNorm]);
+      const merged = new Set(base);
+      extra.forEach(x => merged.add(x));
+      return merged;
+    }
+
+    ruleSubjectMatches(a, b){
+      const sa = this.getSubjectAliases(a);
+      const sb = this.getSubjectAliases(b);
+      if(!sa.size || !sb.size) return false;
+      for(const x of sa){ if(sb.has(x)) return true; }
+      return false;
+    }
+
+    getRuleSubjKey(mon){
+      this.ensureConstraintSubjectIndex();
+      const raw = String(mon || "").trim();
+      if(!raw) return "";
+      if(this.__ruleSubjKeyCache.has(raw)) return this.__ruleSubjKeyCache.get(raw);
+      for(const s of this.__canonicalSubjects){
+        if(this.ruleSubjectMatches(s.id, raw) || this.ruleSubjectMatches(s.ten, raw)){
+          this.__ruleSubjKeyCache.set(raw, s.id);
+          return s.id;
+        }
+      }
+      const n = this.normConstraintStr(raw);
+      if(this.__ghepRuleMap.has(n)){
+        const resolved = this.getRuleSubjKey(this.__ghepRuleMap.get(n));
+        this.__ruleSubjKeyCache.set(raw, resolved);
+        return resolved;
+      }
+      this.__ruleSubjKeyCache.set(raw, raw);
+      return raw;
+    }
+
+    getRoomLocation(room, lop){
+      this.ensureConstraintSubjectIndex();
+      const rNorm = this.normConstraintStr(room);
+      if(rNorm){
+        if(this.__roomLocationMap && this.__roomLocationMap.has(rNorm)){
+          return this.__roomLocationMap.get(rNorm) || rNorm;
+        }
+        return rNorm;
+      }
+      if(lop && typeof lop === "object"){
+        return this.normConstraintStr(lop.diadiem ?? lop.diaDiem ?? lop.khu ?? lop.location ?? "");
+      }
+      return "";
+    }
+
+    initConstraintRules(classMap){
+      this.__constraintSubjReady = false;
+      this.ensureConstraintSubjectIndex();
+      const data = this.data || {};
+      const constraints = data.tkbConstraints || {};
+
+      this.subjectRulesByClassSubj = new Map();
+      this.noSameSessionByClassSubj = new Map();
+      this.noSameDayByClassSubj = new Map();
+      this.subjectGroupRulesByClass = new Map();
+      this.subjectGroupOffSlots = new Set();
+      this.teacherRules = new Map();
+      this.teacherFixedLocMap = new Map();
+
+      const resolveCid = (cRaw) => {
+        const s = String(cRaw || "").trim();
+        return (classMap && classMap.get(s.toLowerCase())) || s;
+      };
+
+      const subjConfObj = (constraints.subject && typeof constraints.subject === "object") ? constraints.subject : {};
+      Object.entries(subjConfObj).forEach(([sKey, subConf]) => {
+        if(!subConf || typeof subConf.byClass !== "object") return;
+        const ruleSubj = this.getRuleSubjKey(sKey);
+        const sCanon = this.getCanonMonKey(sKey);
+        Object.entries(subConf.byClass).forEach(([cRaw, r]) => {
+          if(!r || typeof r !== "object") return;
+          const cid = resolveCid(cRaw);
+          const sa = r.sessionAllowed || {};
+          const allowMorning = sa.allowMorning !== false;
+          const allowAfternoon = sa.allowAfternoon !== false;
+          const oneSessionPerDay = !!sa.oneSessionPerDay;
+
+          const legacyAvoid = r.avoidBreakPairs || {};
+          const b23 = r.avoidBreakPair23 || {};
+          const b34 = r.avoidBreakPair34 || {};
+          const avoid23Morning = (b23.morning !== undefined) ? !!b23.morning : !!legacyAvoid.morning;
+          const avoid23Afternoon = (b23.afternoon !== undefined) ? !!b23.afternoon : !!legacyAvoid.afternoon;
+          const avoid34Morning = (b34.morning !== undefined) ? !!b34.morning : !!legacyAvoid.morning;
+          const avoid34Afternoon = (b34.afternoon !== undefined) ? !!b34.afternoon : !!legacyAvoid.afternoon;
+
+          const linkedDaysAvoid = new Set();
+          if(r.linkedDays && typeof r.linkedDays === "object"){
+            for(const buoi of SESSIONS_LIST){
+              const bMap = r.linkedDays[buoi];
+              for(const thu of DAYS_LIST){
+                let avoided = false;
+                if(bMap && typeof bMap === "object" && thu in bMap) avoided = !!bMap[thu];
+                else if(thu in r.linkedDays) avoided = !!r.linkedDays[thu];
+                if(avoided) linkedDaysAvoid.add(`${buoi}|${thu}`);
+              }
+            }
+          }
+
+          const spacingDays = Math.max(0, Number(r.spacingDays?.days || 0));
+          const weeklyMorningMax = Math.max(0, Number(r.weeklySessionPeriods?.morning || 0));
+          const weeklyAfternoonMax = Math.max(0, Number(r.weeklySessionPeriods?.afternoon || 0));
+
+          const maxPeriodsSang = Math.max(0, Number(r.maxPeriods?.sang || 0));
+          const maxPeriodsChieu = Math.max(0, Number(r.maxPeriods?.chieu || 0));
+          const maxPeriodsDay = {};
+          let hasMaxPeriodsDay = false;
+          for(const thu of DAYS_LIST){
+            const v = (r.maxPeriods?.day && typeof r.maxPeriods.day === "object")
+              ? Number(r.maxPeriods.day[thu] || 0)
+              : Number(r.maxPeriods?.day || 0);
+            if(v > 0){
+              maxPeriodsDay[thu] = v;
+              hasMaxPeriodsDay = true;
+            }
+          }
+
+          const maxSessionsMorning = Math.max(0, Number(r.maxSessions?.morning || 0));
+          const maxSessionsAfternoon = Math.max(0, Number(r.maxSessions?.afternoon || 0));
+          const maxSessionsWeek = Math.max(0, Number(r.maxSessions?.day || 0));
+
+          const compiled = {
+            cid,
+            ruleSubj,
+            sCanon,
+            allowMorning,
+            allowAfternoon,
+            oneSessionPerDay,
+            avoid23Morning,
+            avoid23Afternoon,
+            avoid34Morning,
+            avoid34Afternoon,
+            linkedDaysAvoid,
+            spacingDays,
+            weeklyMorningMax,
+            weeklyAfternoonMax,
+            maxPeriodsSang,
+            maxPeriodsChieu,
+            maxPeriodsDay: hasMaxPeriodsDay ? maxPeriodsDay : null,
+            maxSessionsMorning,
+            maxSessionsAfternoon,
+            maxSessionsWeek
+          };
+          this.subjectRulesByClassSubj.set(`${cid}|${ruleSubj}`, compiled);
+          this.subjectRulesByClassSubj.set(`${cid}|${sCanon}`, compiled);
+        });
+      });
+
+      const nssRoot = constraints.subjectNoSameSession || {};
+      const globalNssGroups = nssRoot.groups || {};
+      const nssByClass = nssRoot.byClass || {};
+      for(const l of (this.classes || [])){
+        const cid = String(l.id || "");
+        const cEntry = nssByClass[cid] || nssByClass[l.ten] || {};
+        const ssGroups = cEntry.sameSession?.groups || globalNssGroups || {};
+        const sdGroups = cEntry.sameDay?.groups || {};
+
+        Object.values(ssGroups).forEach(arr => {
+          if(!Array.isArray(arr) || arr.length < 2) return;
+          const keys = arr.map(m => this.getRuleSubjKey(m)).filter(Boolean);
+          for(let i = 0; i < keys.length; i++){
+            for(let j = 0; j < keys.length; j++){
+              if(i === j || keys[i] === keys[j]) continue;
+              const k = `${cid}|${keys[i]}`;
+              if(!this.noSameSessionByClassSubj.has(k)) this.noSameSessionByClassSubj.set(k, new Set());
+              this.noSameSessionByClassSubj.get(k).add(keys[j]);
+            }
+          }
+        });
+
+        Object.values(sdGroups).forEach(arr => {
+          if(!Array.isArray(arr) || arr.length < 2) return;
+          const keys = arr.map(m => this.getRuleSubjKey(m)).filter(Boolean);
+          for(let i = 0; i < keys.length; i++){
+            for(let j = 0; j < keys.length; j++){
+              if(i === j || keys[i] === keys[j]) continue;
+              const k = `${cid}|${keys[i]}`;
+              if(!this.noSameDayByClassSubj.has(k)) this.noSameDayByClassSubj.set(k, new Set());
+              this.noSameDayByClassSubj.get(k).add(keys[j]);
+            }
+          }
+        });
+      }
+
+      const groupList = Array.isArray(data.nhommon) && data.nhommon.length
+        ? data.nhommon
+        : (Array.isArray(data.subjectGroups) ? data.subjectGroups : []);
+      const groupMap = new Map();
+      groupList.forEach((g, idx) => {
+        if(!g) return;
+        const gid = String(g.id ?? g.ma ?? g.ten ?? idx).trim();
+        const mons = Array.isArray(g.subjects) ? g.subjects : (Array.isArray(g.mon) ? g.mon : []);
+        const subjSet = new Set(mons.map(m => this.getRuleSubjKey(m)).filter(Boolean));
+        if(gid && subjSet.size > 0) groupMap.set(gid, subjSet);
+      });
+
+      const sgOff = constraints.fixedOff?.subjectGroup || {};
+      Object.entries(sgOff).forEach(([gid, slotsObj]) => {
+        if(!slotsObj || typeof slotsObj !== "object") return;
+        Object.keys(slotsObj).forEach(k => {
+          if(slotsObj[k]){
+            const parts = k.replace(/_/g, "|").split("|");
+            if(parts.length >= 3){
+              const slot = detailsToSlot(parts[0], parts[1], Number(parts[2]));
+              if(slot >= 0) this.subjectGroupOffSlots.add(`${gid}|${slot}`);
+            }
+          }
+        });
+      });
+
+      const sgRulesRoot = constraints.subjectGroup || {};
+      Object.entries(sgRulesRoot).forEach(([gid, gConf]) => {
+        if(!gConf || typeof gConf.byClass !== "object") return;
+        const subjSet = groupMap.get(String(gid).trim());
+        if(!subjSet || subjSet.size === 0) return;
+        Object.entries(gConf.byClass).forEach(([cRaw, r]) => {
+          if(!r || typeof r !== "object") return;
+          const cid = resolveCid(cRaw);
+          const sa = r.sessionAllowed || {};
+          const maxPeriodsDay = {};
+          let hasMaxDay = false;
+          for(const thu of DAYS_LIST){
+            const v = (r.maxPeriods?.day && typeof r.maxPeriods.day === "object")
+              ? Number(r.maxPeriods.day[thu] || 0)
+              : Number(r.maxPeriods?.day || 0);
+            if(v > 0){ maxPeriodsDay[thu] = v; hasMaxDay = true; }
+          }
+          const gr = {
+            gid: String(gid).trim(),
+            cid,
+            subjectSet: subjSet,
+            allowMorning: sa.allowMorning !== false,
+            allowAfternoon: sa.allowAfternoon !== false,
+            oneSessionPerDay: !!sa.oneSessionPerDay,
+            weeklyMorningMax: Math.max(0, Number(r.weeklySessionPeriods?.morning || 0)),
+            weeklyAfternoonMax: Math.max(0, Number(r.weeklySessionPeriods?.afternoon || 0)),
+            maxPeriodsSang: Math.max(0, Number(r.maxPeriods?.sang || 0)),
+            maxPeriodsChieu: Math.max(0, Number(r.maxPeriods?.chieu || 0)),
+            maxPeriodsDay: hasMaxDay ? maxPeriodsDay : null,
+            maxSubjectsSang: Math.max(0, Number(r.maxSubjects?.sang || 0)),
+            maxSubjectsChieu: Math.max(0, Number(r.maxSubjects?.chieu || 0)),
+            maxSubjectsDay: Math.max(0, Number(r.maxSubjects?.day || 0)),
+            maxSessionsMorning: Math.max(0, Number(r.maxSessions?.morning || 0)),
+            maxSessionsAfternoon: Math.max(0, Number(r.maxSessions?.afternoon || 0)),
+            maxSessionsWeek: Math.max(0, Number(r.maxSessions?.day || 0))
+          };
+          if(!this.subjectGroupRulesByClass.has(cid)) this.subjectGroupRulesByClass.set(cid, []);
+          this.subjectGroupRulesByClass.get(cid).push(gr);
+        });
+      });
+      this.__subjectGroupsMap = groupMap;
+
+      const teacherList = Array.isArray(data.giaovien) && data.giaovien.length
+        ? data.giaovien
+        : (Array.isArray(data.gv) ? data.gv : []);
+      const tIdToKeys = new Map();
+      teacherList.forEach(t => {
+        if(!t || typeof t !== "object") return;
+        const keys = new Set();
+        for(const f of [t.id, t.ma, t.ten, t.name, t.hoten, t.viettat, t.tenTat]){
+          if(f) keys.add(String(f).trim().toLowerCase());
+        }
+        for(const p of parseTeacherList(t.ten || t.id || "")){
+          if(p) keys.add(String(p).trim().toLowerCase());
+        }
+        const idStr = String(t.id ?? t.ma ?? t.ten ?? "").trim();
+        if(idStr) tIdToKeys.set(idStr, Array.from(keys));
+      });
+
+      const tRulesRoot = constraints.teacher || {};
+      Object.entries(tRulesRoot).forEach(([tid, r]) => {
+        if(!r || typeof r !== "object") return;
+        const hasGridTrue = (obj) => {
+          if(!obj || typeof obj !== "object") return false;
+          for(const b of SESSIONS_LIST){
+            for(const thu of DAYS_LIST){
+              if(obj[b]?.[thu]) return true;
+            }
+          }
+          return false;
+        };
+        const hasLocationRules = hasGridTrue(r.oneLocationPerSession) ||
+          hasGridTrue(r.gapBetweenLocations) ||
+          hasGridTrue(r.moveAtBreak23) ||
+          hasGridTrue(r.moveAtBreak34) ||
+          hasGridTrue(r.maxOneMovePerSession);
+
+        const maxPeriodsDay = {};
+        let hasMaxPeriodsDay = false;
+        for(const thu of DAYS_LIST){
+          const v = (r.maxPeriods?.day && typeof r.maxPeriods.day === "object")
+            ? Number(r.maxPeriods.day[thu] || 0)
+            : Number(r.maxPeriods?.day || 0);
+          if(v > 0){ maxPeriodsDay[thu] = v; hasMaxPeriodsDay = true; }
+        }
+        const maxDays = Math.max(0, Number(r.maxDaysSessions?.maxDays || 0));
+        const maxSessions = Math.max(0, Number(r.maxDaysSessions?.maxSessions || 0));
+        const maxPeriodsSang = Math.max(0, Number(r.maxPeriods?.sang || 0));
+        const maxPeriodsChieu = Math.max(0, Number(r.maxPeriods?.chieu || 0));
+        const maxMorning = Math.max(0, Number(r.maxMorningAfternoon?.morning || 0));
+        const maxAfternoon = Math.max(0, Number(r.maxMorningAfternoon?.afternoon || 0));
+        const hasLoadCaps = (maxDays > 0 || maxSessions > 0 || maxPeriodsSang > 0 || maxPeriodsChieu > 0 || hasMaxPeriodsDay || maxMorning > 0 || maxAfternoon > 0);
+
+        const mustTeachSlots = new Set();
+        if(r.mustTeach && typeof r.mustTeach === "object"){
+          Object.keys(r.mustTeach).forEach(k => {
+            if(r.mustTeach[k]){
+              const parts = k.replace(/_/g, "|").split("|");
+              if(parts.length >= 3){
+                const sl = detailsToSlot(parts[0], parts[1], Number(parts[2]));
+                if(sl >= 0) mustTeachSlots.add(sl);
+              }
+            }
+          });
+        }
+
+        const compiledT = {
+          tid,
+          hasLocationRules,
+          oneLocationPerSession: r.oneLocationPerSession || null,
+          gapBetweenLocations: r.gapBetweenLocations || null,
+          moveAtBreak23: r.moveAtBreak23 || null,
+          moveAtBreak34: r.moveAtBreak34 || null,
+          maxOneMovePerSession: r.maxOneMovePerSession || null,
+          noMorningP5AfternoonP1: !!r.noMorningP5AfternoonP1,
+          oneSessionPerDay: r.oneSessionPerDay || null,
+          hasLoadCaps,
+          maxDays,
+          maxSessions,
+          maxPeriodsSang,
+          maxPeriodsChieu,
+          maxPeriodsDay: hasMaxPeriodsDay ? maxPeriodsDay : null,
+          maxMorning,
+          maxAfternoon,
+          mustTeachSlots
+        };
+
+        const targetKeys = tIdToKeys.get(String(tid).trim()) || [String(tid).trim().toLowerCase()];
+        for(const tk of targetKeys){
+          this.teacherRules.set(tk, compiledT);
+        }
+      });
+    }
+
+    attachActivityConstraintMeta(act){
+      if(!act) return act;
+      const cid = String(act.classId || "");
+      const ruleSubjKey = this.getRuleSubjKey(act.mon);
+      const sCanon = act.canonKey || this.getCanonMonKey(act.mon);
+      act.canonKey = sCanon;
+      act.ruleSubjKey = ruleSubjKey;
+      act.normMon = this.normalizeMonName(act.mon);
+      act.normLoc = this.getRoomLocation(act.room, act.lop);
+      act.maxSessionLimit = this.getSubjectSessionLimit(act.lop, act.mon);
+      act.teacherList = act.gv ? parseTeacherList(act.gv) : [];
+      act.roomKey = act.room ? act.room.trim().toLowerCase() : "";
+      act.caPref = (act.lop && act.lop.ca) ? String(act.lop.ca).trim().toLowerCase() : "";
+      act.subjectRule = (this.subjectRulesByClassSubj && (
+        this.subjectRulesByClassSubj.get(`${cid}|${ruleSubjKey}`) ||
+        this.subjectRulesByClassSubj.get(`${cid}|${sCanon}`)
+      )) || null;
+      act.noSameSessionForbidden = (this.noSameSessionByClassSubj && this.noSameSessionByClassSubj.get(`${cid}|${ruleSubjKey}`)) || null;
+      act.noSameDayForbidden = (this.noSameDayByClassSubj && this.noSameDayByClassSubj.get(`${cid}|${ruleSubjKey}`)) || null;
+
+      const classGroups = (this.subjectGroupRulesByClass && this.subjectGroupRulesByClass.get(cid)) || [];
+      act.groupRules = classGroups.filter(gr => gr.subjectSet && gr.subjectSet.has(ruleSubjKey));
+      const gIds = [];
+      if(this.__subjectGroupsMap){
+        this.__subjectGroupsMap.forEach((sSet, gid) => {
+          if(sSet.has(ruleSubjKey)) gIds.push(gid);
+        });
+      }
+      act.groupIds = gIds;
+      return act;
+    }
+
+    syncJointGhepCells(classMap){
+      const data = this.data || {};
+      const rows = Array.isArray(data.dayGhep) ? data.dayGhep : [];
+      if(!rows.length) return;
+      const resolveCid = (cRaw) => {
+        const s = String(cRaw || "").trim();
+        return (classMap && classMap.get(s.toLowerCase())) || s;
+      };
+      const classById = new Map();
+      (this.classes || []).forEach(l => classById.set(String(l.id || ""), l));
+
+      for(const row of rows){
+        if(!row || !row.ten) continue;
+        const mon = String(row.ten).trim();
+        const monNorm = this.normalizeMonName(mon);
+        const lopRaw = Array.isArray(row.lop) ? row.lop : [];
+        const cids = Array.from(new Set(lopRaw.map(resolveCid).filter(cid => classById.has(cid))));
+        if(cids.length < 2) continue;
+
+        let need = Math.max(0, Number(row.sotiet) || 0);
+        if(!need){
+          for(const cid of cids){
+            const lop = classById.get(cid);
+            const cCanon = lop?.ten2 || lop?.ten || cid;
+            const n = Number(data.pccmSotietMatrix?.[`${cid}|${mon}`] ?? data.pccmSotietMatrix?.[`${cCanon}|${mon}`] ?? 0);
+            if(n > need) need = n;
+          }
+        }
+        if(!need) continue;
+
+        let gv = Array.isArray(row.gv) ? row.gv.join(", ") : String(row.gv || "").trim();
+        if(!gv){
+          for(const cid of cids){
+            gv = this.getTeacherForClassMon(classById.get(cid), mon);
+            if(gv) break;
+          }
+        }
+
+        const ruleSubj = this.getRuleSubjKey(mon);
+        const firstLop = classById.get(cids[0]);
+        const firstRm = this.getRoomForClassMon(firstLop, mon);
+        const rowLoc = this.getRoomLocation(firstRm, firstLop);
+        const cidSet = new Set(cids);
+
+        const isTeacherBusyByOtherFixed = (t, slot) => {
+          for(const [fKey, fVal] of this.fixedSlots.entries()){
+            const [fCid, fSlotStr] = String(fKey).split("|");
+            if(Number(fSlotStr) !== slot) continue;
+            if(cidSet.has(fCid) && this.normalizeMonName(fVal?.mon) === monNorm) continue;
+            if(fVal?.gv && parseTeacherList(fVal.gv).includes(t)) return true;
+          }
+          return false;
+        };
+
+        const isSlotConstraintValid = (thu, buoi, ti, ignoreExistingSelf = false) => {
+          const slot = detailsToSlot(thu, buoi, ti);
+          const dIdx = DAYS_LIST.indexOf(thu);
+          const sIdx = SESSIONS_LIST.indexOf(buoi);
+          const sessStart = dIdx * SLOTS_PER_DAY + sIdx * PERIODS_PER_SESSION;
+          if(gv){
+            for(const t of parseTeacherList(gv)){
+              if(this.teacherOffSlots.has(`${t}|${slot}`)) return false;
+              const tg = this.teacherGrid.get(t);
+              if(tg){
+                if(tg[slot] === -2) return false;
+                if(tg[slot] === -3 && (!ignoreExistingSelf || isTeacherBusyByOtherFixed(t, slot))) return false;
+              }
+              const tr = this.teacherRules ? this.teacherRules.get(t) : null;
+              if(tr && tr.hasLocationRules && rowLoc){
+                const oneLoc = !!(tr.oneLocationPerSession?.[buoi]?.[thu]);
+                const needGap = !!(tr.gapBetweenLocations?.[buoi]?.[thu]);
+                for(let p = 0; p < PERIODS_PER_SESSION; p++){
+                  const sc = sessStart + p;
+                  if(sc === slot) continue;
+                  const oLoc = (this.teacherFixedLocMap && this.teacherFixedLocMap.get(`${t}|${sc}`)) || "";
+                  if(!oLoc || oLoc === rowLoc) continue;
+                  if(oneLoc) return false;
+                  if(needGap && Math.abs(p - ti) === 1) return false;
+                }
+              }
+            }
+          }
+          for(const cid of cids){
+            if(this.offSlots.has(`${cid}|${slot}`)) return false;
+            if(this.fixedSlots.has(`${cid}|${slot}`)){
+              const fVal = this.fixedSlots.get(`${cid}|${slot}`);
+              if(!ignoreExistingSelf || this.normalizeMonName(fVal?.mon) !== monNorm) return false;
+            }
+            const cell = data.tkb?.[cid]?.[thu]?.[buoi]?.[ti];
+            if(this.isCellOff(cell)) return false;
+            if(!ignoreExistingSelf && this.isCellFixed(cell)) return false;
+            const sr = this.subjectRulesByClassSubj?.get(`${cid}|${ruleSubj}`);
+            if(sr){
+              if(buoi === "sang" && sr.allowMorning === false) return false;
+              if(buoi === "chieu" && sr.allowAfternoon === false) return false;
+            }
+          }
+          return true;
+        };
+
+        const isPairConstraintValid = (thu, buoi, t1, t2) => {
+          if(!isSlotConstraintValid(thu, buoi, t1) || !isSlotConstraintValid(thu, buoi, t2)) return false;
+          for(const cid of cids){
+            const sr = this.subjectRulesByClassSubj?.get(`${cid}|${ruleSubj}`);
+            if(sr){
+              const av23 = buoi === "sang" ? sr.avoid23Morning : sr.avoid23Afternoon;
+              const av34 = buoi === "sang" ? sr.avoid34Morning : sr.avoid34Afternoon;
+              if(av23 && t1 === 1 && t2 === 2) return false;
+              if(av34 && t1 === 2 && t2 === 3) return false;
+              if(sr.linkedDaysAvoid && sr.linkedDaysAvoid.has(`${buoi}|${thu}`)) return false;
+            }
+          }
+          return true;
+        };
+
+        const existingSlots = [];
+        for(const thu of DAYS_LIST){
+          for(const buoi of SESSIONS_LIST){
+            for(let ti = 0; ti < PERIODS_PER_SESSION; ti++){
+              const slot = detailsToSlot(thu, buoi, ti);
+              let hasMon = false;
+              let conflict = false;
+              for(const cid of cids){
+                const cell = data.tkb?.[cid]?.[thu]?.[buoi]?.[ti];
+                if(cell && !this.isCellOff(cell)){
+                  const cm = this.normalizeMonName(this.extractMon(cell));
+                  if(cm === monNorm) hasMon = true;
+                  else if(this.isCellFixed(cell)) conflict = true;
+                }else if(this.isCellOff(cell)){
+                  conflict = true;
+                }
+              }
+              if(hasMon && !conflict){
+                if(isSlotConstraintValid(thu, buoi, ti, true)){
+                  existingSlots.push({ thu, buoi, ti, slot });
+                }else{
+                  for(const cid of cids){
+                    const arr = data.tkb?.[cid]?.[thu]?.[buoi];
+                    if(Array.isArray(arr) && (!this.isCellFixed(arr[ti]) || (typeof arr[ti] === "object" && arr[ti].jointPin))) arr[ti] = null;
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        const chosen = existingSlots.slice(0, need);
+        for(const extra of existingSlots.slice(need)){
+          for(const cid of cids){
+            const arr = data.tkb?.[cid]?.[extra.thu]?.[extra.buoi];
+            if(Array.isArray(arr) && (!this.isCellFixed(arr[extra.ti]) || (typeof arr[extra.ti] === "object" && arr[extra.ti].jointPin))){
+              arr[extra.ti] = null;
+            }
+          }
+        }
+
+        if(chosen.length < need){
+          const canUsePeriod = (thu, buoi, ti) => {
+            const slot = detailsToSlot(thu, buoi, ti);
+            if(chosen.some(x => x.slot === slot)) return false;
+            return isSlotConstraintValid(thu, buoi, ti, false);
+          };
+
+          for(const buoi of ["chieu", "sang"]){
+            if(chosen.length >= need) break;
+            for(const thu of DAYS_LIST){
+              if(chosen.length >= need) break;
+              if(need - chosen.length >= 2){
+                for(const [t1, t2] of [[0, 1], [2, 3], [3, 4], [1, 2]]){
+                  if(canUsePeriod(thu, buoi, t1) && canUsePeriod(thu, buoi, t2) && isPairConstraintValid(thu, buoi, t1, t2)){
+                    chosen.push({ thu, buoi, ti: t1, slot: detailsToSlot(thu, buoi, t1) });
+                    chosen.push({ thu, buoi, ti: t2, slot: detailsToSlot(thu, buoi, t2) });
+                    break;
+                  }
+                }
+              }
+            }
+          }
+          for(const buoi of ["chieu", "sang"]){
+            if(chosen.length >= need) break;
+            for(const thu of DAYS_LIST){
+              for(let ti = 0; ti < PERIODS_PER_SESSION; ti++){
+                if(chosen.length >= need) break;
+                if(canUsePeriod(thu, buoi, ti)){
+                  chosen.push({ thu, buoi, ti, slot: detailsToSlot(thu, buoi, ti) });
+                }
+              }
+            }
+          }
+        }
+
+        for(const item of chosen){
+          const { thu, buoi, ti, slot } = item;
+          for(const cid of cids){
+            const lop = classById.get(cid);
+            const key = `${cid}|${slot}`;
+            const rm = this.getRoomForClassMon(lop, mon);
+            const loc = this.getRoomLocation(rm, lop);
+            const origCell = data.tkb?.[cid]?.[thu]?.[buoi]?.[ti];
+            const rawCell = (origCell && !this.isCellOff(origCell) && !(typeof origCell === "object" && origCell.jointPin) && this.normalizeMonName(this.extractMon(origCell)) === monNorm)
+              ? origCell
+              : mon;
+            this.fixedSlots.set(key, { mon, canonKey: this.getCanonMonKey(mon), ruleSubjKey: this.getRuleSubjKey(mon), gv, room: rm, loc });
+            this.fixedRawCells.set(key, rawCell);
+            if(this.classGrid.has(cid)) this.classGrid.get(cid)[slot] = -3;
+            if(!data.tkb) data.tkb = {};
+            if(!data.tkb[cid]) data.tkb[cid] = {};
+            if(!data.tkb[cid][thu]) data.tkb[cid][thu] = {};
+            if(!Array.isArray(data.tkb[cid][thu][buoi])) data.tkb[cid][thu][buoi] = [null, null, null, null, null];
+            data.tkb[cid][thu][buoi][ti] = rawCell;
+            if(gv){
+              if(!data.tkbLessonTeachers) data.tkbLessonTeachers = {};
+              data.tkbLessonTeachers[`${cid}|${mon}`] = gv;
+              for(const t of parseTeacherList(gv)){
+                if(!this.teacherGrid.has(t)) this.teacherGrid.set(t, new Array(TOTAL_SLOTS).fill(-1));
+                this.teacherGrid.get(t)[slot] = -3;
+                if(loc) this.teacherFixedLocMap.set(`${t}|${slot}`, loc);
+              }
+            }
+            if(rm){
+              const rKey = rm.trim().toLowerCase();
+              if(!this.roomGrid.has(rKey)) this.roomGrid.set(rKey, new Array(TOTAL_SLOTS).fill(-1));
+              this.roomGrid.get(rKey)[slot] = -3;
+            }
+          }
+        }
+      }
+    }
+
+    isActivityConstraintSafe(act){
+      if(!act) return true;
+      const slot = this.actPlacement[act.id];
+      if(slot < 0) return true;
+      const savedStrict = this.strictFetGaps;
+      this.strictFetGaps = false;
+      const res = this.getConflictsForSlot(act, slot);
+      this.strictFetGaps = savedStrict;
+      if(!res.possible || res.conflicts.length > 0) return false;
+      if(act.gv && this.teacherRules){
+        for(const t of parseTeacherList(act.gv)){
+          const tr = this.teacherRules.get(t);
+          if(tr && tr.mustTeachSlots && tr.mustTeachSlots.size > 0){
+            const tg = this.teacherGrid.get(t);
+            if(tg){
+              for(const ms of tr.mustTeachSlots){
+                if(tg[ms] < 0 && tg[ms] !== -3) return false;
+              }
+            }
+          }
+        }
+      }
+      return true;
+    }
+
     initLessonBlockRules(){
       this.classSubjectLessonBlocks = new Map();
       const constraints = this.data.tkbConstraints;
@@ -181,8 +905,10 @@
           Object.entries(cConf.lessonBlocks).forEach(([lenStr, bConf]) => {
             const len = parseInt(lenStr, 10);
             if(!len || len < 2) return;
-            const min = bConf?.min != null ? Number(bConf.min) : 0;
-            const max = bConf?.max != null ? Number(bConf.max) : Infinity;
+            const minRaw = Number(bConf?.min || 0);
+            const maxRaw = Number(bConf?.max || 0);
+            const min = minRaw > 0 ? minRaw : 0;
+            const max = maxRaw > 0 ? maxRaw : Infinity;
             if(min > 0 || max < Infinity){
               const entry = { cid: targetCid, classCanon, sCanon, mon: sKey, len, min, max };
               this.classSubjectLessonBlocks.set(`${targetCid}|${sCanon}|${len}`, entry);
@@ -193,6 +919,13 @@
     }
 
     isLessonBlockSafe(...acts){
+      if(acts && acts.length > 0){
+        for(const a of acts){
+          if(a && typeof a === "object" && a.id >= 0 && this.actPlacement[a.id] >= 0){
+            if(!this.isActivityConstraintSafe(a)) return false;
+          }
+        }
+      }
       if(!this.classSubjectLessonBlocks || this.classSubjectLessonBlocks.size === 0) return true;
       let targetClasses = null;
       if(acts && acts.length > 0){
@@ -354,6 +1087,7 @@
       });
 
       this.initLessonBlockRules();
+      this.initConstraintRules(classMap);
 
       // ================= SCORED TEACHER UNIVERSE (metric alignment) ==========
       // UI statistics (calcTeacherTKBStats) count only teachers coming from
@@ -392,7 +1126,7 @@
               if(this.isCellOff(cell)){
                 this.offSlots.add(key);
                 this.classGrid.get(cid)[slot] = -2; // -2 denotes OFF
-              }else if(cell && this.isCellFixed(cell)){
+              }else if(cell && this.isCellFixed(cell) && !(typeof cell === "object" && cell.jointPin)){
                 const mon = this.extractMon(cell);
                 let gv = "";
                 if(typeof cell === "object" && cell.gv){
@@ -404,7 +1138,8 @@
                   gv = this.getTeacherForClassMon(l, mon);
                 }
                 const rm = this.getRoomForClassMon(l, mon);
-                this.fixedSlots.set(key, { mon, gv, room: rm });
+                const loc = this.getRoomLocation(rm, l);
+                this.fixedSlots.set(key, { mon, canonKey: this.getCanonMonKey(mon), ruleSubjKey: this.getRuleSubjKey(mon), gv, room: rm, loc });
                 this.fixedRawCells.set(key, cell); // Store exact original object
                 this.classGrid.get(cid)[slot] = -3; // -3 denotes FIXED
 
@@ -413,6 +1148,7 @@
                 tList.forEach(t => {
                   if(!this.teacherGrid.has(t)) this.teacherGrid.set(t, new Array(TOTAL_SLOTS).fill(-1));
                   this.teacherGrid.get(t)[slot] = -3;
+                  if(loc && this.teacherFixedLocMap) this.teacherFixedLocMap.set(`${t}|${slot}`, loc);
                 });
                 if(rm){
                   const rKey = rm.trim().toLowerCase();
@@ -488,6 +1224,7 @@
       Object.keys(subjectOffConstraints).forEach(sRaw => {
         const sCanon = this.getCanonMonKey(sRaw);
         const norm = this.normalizeMonName(sRaw);
+        const rSubj = this.getRuleSubjKey(sRaw);
         const slotsObj = subjectOffConstraints[sRaw] || {};
         Object.keys(slotsObj).forEach(k => {
           if(slotsObj[k]){
@@ -497,12 +1234,16 @@
               if(slot >= 0){
                 this.subjectOffSlots.add(`${sCanon}|${slot}`);
                 this.subjectOffSlots.add(`${norm}|${slot}`);
+                if(rSubj) this.subjectOffSlots.add(`${rSubj}|${slot}`);
                 this.subjectOffSlots.add(`${sRaw.trim().toLowerCase()}|${slot}`);
               }
             }
           }
         });
       });
+
+      // 2b. Synchronize & pin multi-class dayGhep joint lessons
+      this.syncJointGhepCells(classMap);
 
       // 3. Build Activities from PCCM Matrix
       this.buildActivities();
@@ -550,7 +1291,8 @@
       return false;
     }
 
-    isCellFixed(cell){
+    isCellFixed(cell, cid = null, slot = null){
+      if(cid != null && slot != null && this.fixedSlots && this.fixedSlots.has(`${cid}|${slot}`)) return true;
       if(!cell) return false;
       if(typeof cell === "object" && (cell.fixed === true || cell.fixed === 1 || cell.cd === 1 || cell.cd === true || cell.codinh === true || cell.codinh === 1 || cell.isFixed === true || cell.locked === true)) return true;
       if(typeof cell === "string"){
@@ -597,13 +1339,21 @@
 
     normalizeMonName(name){
       if(!name) return "";
+      if(typeof name === "string" && this.__normMonCache && this.__normMonCache.has(name)){
+        return this.__normMonCache.get(name);
+      }
       let s = String(name).normalize('NFC').trim();
       if(s.includes(" - ")){
         s = s.split(" - ")[0].trim();
       }
       s = s.replace(/^[!*]+|[!*]+$/g, "").replace(/\[fixed\]/gi, "").replace(/\[co_dinh\]/gi, "").trim();
       s = s.replace(/\s+/g, " ");
-      return s.toLowerCase();
+      const res = s.toLowerCase();
+      if(typeof name === "string"){
+        if(!this.__normMonCache) this.__normMonCache = new Map();
+        this.__normMonCache.set(name, res);
+      }
+      return res;
     }
 
     getTeacherForClassMon(lop, mon){
@@ -908,13 +1658,26 @@
 
     getCanonMonKey(mon){
       if(!mon) return "";
+      // Bo nho dem gan voi chi muc bi danh: DATA.dayGhep / mon / monhoc doi (mang moi) thi chi
+      // muc dung lai va bo nho dem phai xoa theo (test "chi muc bi danh lam moi khi DATA.dayGhep doi").
+      const aliasIndex = this.ensureMonAliasIndex();
+      if(this.__canonMonCacheIndex !== aliasIndex){
+        this.__canonMonCache = new Map();
+        this.__canonMonCacheIndex = aliasIndex;
+      }
+      if(typeof mon === "string" && this.__canonMonCache.has(mon)){
+        return this.__canonMonCache.get(mon);
+      }
       const builtinKey = this.getCanonMonKeyBuiltin(mon);
       // Chao co / SHL / HDTN co luat rieng o resolveFixedSubjectToPccm — giu nguyen.
-      if(builtinKey === "hdtn") return builtinKey;
-      const schoolKey = this.removeDiacritics(mon).replace(/\s+\d+$/, "").replace(/\s+/g, " ").trim();
-      const mapped = this.ensureMonAliasIndex().aliasToCanonical.get(schoolKey);
-      if(mapped) return this.getCanonMonKeyBuiltin(mapped) || mapped;
-      return builtinKey;
+      let out = builtinKey;
+      if(builtinKey !== "hdtn"){
+        const schoolKey = this.removeDiacritics(mon).replace(/\s+\d+$/, "").replace(/\s+/g, " ").trim();
+        const mapped = aliasIndex.aliasToCanonical.get(schoolKey);
+        if(mapped) out = this.getCanonMonKeyBuiltin(mapped) || mapped;
+      }
+      if(typeof mon === "string") this.__canonMonCache.set(mon, out);
+      return out;
     }
 
     getCanonMonKeyBuiltin(mon){
@@ -1232,8 +1995,36 @@
               this.classSubjectLessonBlocks.get(`${cid}|${sCanon}|${len}`) ||
               this.classSubjectLessonBlocks.get(`${classCanon}|${sCanon}|${len}`)
             ) : null;
+            // Count already-fixed blocks of length `len` for this class + subject
+            let fixedBlocksOfLen = 0;
+            if(req){
+              for(let d = 0; d < DAYS_LIST.length; d++){
+                for(let b = 0; b < SESSIONS_LIST.length; b++){
+                  const sStart = d * SLOTS_PER_DAY + b * PERIODS_PER_SESSION;
+                  const idx = [];
+                  for(let p = 0; p < PERIODS_PER_SESSION; p++){
+                    const fix = this.fixedSlots.get(`${cid}|${sStart + p}`);
+                    if(fix && fix.mon && this.getCanonMonKey(fix.mon) === sCanon){
+                      idx.push(p + 1);
+                    }
+                  }
+                  if(idx.length >= len){
+                    const sSet = new Set(idx);
+                    for(const i of idx){
+                      let ok = true;
+                      for(let k = 0; k < len; k++){
+                        if(!sSet.has(i + k)) ok = false;
+                      }
+                      if(ok && !sSet.has(i - 1)) fixedBlocksOfLen++;
+                    }
+                  }
+                }
+              }
+            }
             // 25/08: min khong the vuot floor(soTiet/len) (mon 1 tiet ma min=1 cum doi)
-            const minReq = req ? Math.min(req.min, Math.floor((Number(item.required) || 0) / len)) : 0;
+            const rawMinReq = req ? Math.min(req.min, Math.floor((Number(item.required) || 0) / len)) : 0;
+            const maxAllowedMore = (req && Number.isFinite(req.max)) ? Math.max(0, req.max - fixedBlocksOfLen) : Infinity;
+            const minReq = Math.min(rawMinReq, maxAllowedMore);
             if(minReq > 0 && len > sessionLimit){
               if(!this.__blockLimitConflicts) this.__blockLimitConflicts = [];
               this.__blockLimitConflicts.push({
@@ -1256,7 +2047,7 @@
           }
 
           for(const dur of blockDurs){
-            actList.push({
+            actList.push(this.attachActivityConstraintMeta({
               id: actCounter++,
               classId: cid,
               classCanon,
@@ -1269,14 +2060,14 @@
               isFixed: false,
               fixedSlot: -1,
               nIncompatible: 0
-            });
+            }));
           }
 
           while(remain > 0){
             let dur = 1;
             remain -= 1;
 
-            actList.push({
+            actList.push(this.attachActivityConstraintMeta({
               id: actCounter++,
               classId: cid,
               classCanon,
@@ -1289,7 +2080,7 @@
               isFixed: false,
               fixedSlot: -1,
               nIncompatible: 0
-            });
+            }));
           }
         });
       });
@@ -1336,12 +2127,41 @@
         score += (classActCount.get(act.classId) || 0);
 
         let offCount = 0;
+        const tListForOff = act.gv ? parseTeacherList(act.gv) : [];
         for(let s = 0; s < TOTAL_SLOTS; s++){
-          if(this.offSlots.has(`${act.classId}|${s}`) || this.fixedSlots.has(`${act.classId}|${s}`)){
-            offCount++;
+          let blocked = this.offSlots.has(`${act.classId}|${s}`) || this.fixedSlots.has(`${act.classId}|${s}`);
+          if(!blocked && act.subjectRule){
+            const bIdx = Math.floor((s % SLOTS_PER_DAY) / PERIODS_PER_SESSION);
+            if(bIdx === 0 && act.subjectRule.allowMorning === false) blocked = true;
+            if(bIdx === 1 && act.subjectRule.allowAfternoon === false) blocked = true;
+          }
+          if(!blocked && tListForOff.length > 0){
+            for(const t of tListForOff){
+              if(this.teacherOffSlots.has(`${t}|${s}`)){ blocked = true; break; }
+              const tg = this.teacherGrid.get(t);
+              if(tg && (tg[s] === -2 || tg[s] === -3)){ blocked = true; break; }
+            }
+          }
+          if(blocked) offCount++;
+        }
+        const availSlots = TOTAL_SLOTS - offCount;
+        score += offCount * 3;
+        if(availSlots <= 6) score += 2500;
+        else if(availSlots <= 12) score += 1200;
+        else if(availSlots <= 18) score += 500;
+        if(act.subjectRule){
+          if(act.subjectRule.allowMorning === false || act.subjectRule.allowAfternoon === false) score += 450;
+          if(act.subjectRule.spacingDays > 0) score += 280;
+          if(act.subjectRule.avoid23Morning || act.subjectRule.avoid34Morning || act.subjectRule.avoid23Afternoon || act.subjectRule.avoid34Afternoon) score += 120;
+        }
+        if(act.noSameSessionForbidden && act.noSameSessionForbidden.size > 0) score += 200;
+        if(act.noSameDayForbidden && act.noSameDayForbidden.size > 0) score += 250;
+        if(act.gv && this.teacherRules){
+          for(const t of parseTeacherList(act.gv)){
+            const tr = this.teacherRules.get(t);
+            if(tr && tr.hasLocationRules) score += 900 + (teacherActCount.get(t) || 0) * 20;
           }
         }
-        score += offCount * 2;
         score *= act.duration;
         act.nIncompatible = score;
       }
@@ -1372,14 +2192,15 @@
         this.classGrid.get(act.classId)[s] = actId;
 
         if(act.gv){
-          const tList = parseTeacherList(act.gv);
-          tList.forEach(t => {
+          const tList = act.teacherList || parseTeacherList(act.gv);
+          for(let ti = 0; ti < tList.length; ti++){
+            const t = tList[ti];
             if(!this.teacherGrid.has(t)) this.teacherGrid.set(t, new Array(TOTAL_SLOTS).fill(-1));
             this.teacherGrid.get(t)[s] = actId;
-          });
+          }
         }
         if(act.room){
-          const rKey = act.room.trim().toLowerCase();
+          const rKey = act.roomKey || act.room.trim().toLowerCase();
           if(!this.roomGrid.has(rKey)) this.roomGrid.set(rKey, new Array(TOTAL_SLOTS).fill(-1));
           this.roomGrid.get(rKey)[s] = actId;
         }
@@ -1400,17 +2221,18 @@
           else this.classGrid.get(act.classId)[s] = -1;
         }
         if(act.gv){
-          const tList = parseTeacherList(act.gv);
-          tList.forEach(t => {
+          const tList = act.teacherList || parseTeacherList(act.gv);
+          for(let ti = 0; ti < tList.length; ti++){
+            const t = tList[ti];
             if(this.teacherGrid.has(t) && this.teacherGrid.get(t)[s] === actId){
               const tKey = `${t}|${s}`;
               if(this.teacherOffSlots.has(tKey)) this.teacherGrid.get(t)[s] = -2;
               else this.teacherGrid.get(t)[s] = -1;
             }
-          });
+          }
         }
         if(act.room){
-          const rKey = act.room.trim().toLowerCase();
+          const rKey = act.roomKey || act.room.trim().toLowerCase();
           if(this.roomGrid.has(rKey) && this.roomGrid.get(rKey)[s] === actId){
             this.roomGrid.get(rKey)[s] = -1;
           }
@@ -1428,10 +2250,30 @@
       }
 
       // Check class session preference (ca sáng/chiều)
-      if(act.lop && act.lop.ca){
-        const ca = String(act.lop.ca).trim().toLowerCase();
+      const ca = act.caPref !== undefined ? act.caPref : ((act.lop && act.lop.ca) ? String(act.lop.ca).trim().toLowerCase() : "");
+      if(ca){
         if(ca === "sang" && details.buoi !== "sang") return { possible: false, conflicts: [] };
         if(ca === "chieu" && details.buoi !== "chieu") return { possible: false, conflicts: [] };
+      }
+
+      const sr = act.subjectRule || null;
+      if(sr){
+        if(details.buoi === "sang" && sr.allowMorning === false) return { possible: false, conflicts: [] };
+        if(details.buoi === "chieu" && sr.allowAfternoon === false) return { possible: false, conflicts: [] };
+        const av23 = details.buoi === "sang" ? sr.avoid23Morning : sr.avoid23Afternoon;
+        const av34 = details.buoi === "sang" ? sr.avoid34Morning : sr.avoid34Afternoon;
+        if(av23 && details.periodIdx <= 1 && endPeriod >= 2) return { possible: false, conflicts: [] };
+        if(av34 && details.periodIdx <= 2 && endPeriod >= 3) return { possible: false, conflicts: [] };
+        if(act.duration >= 2 && sr.linkedDaysAvoid && sr.linkedDaysAvoid.has(`${details.buoi}|${details.thu}`)){
+          return { possible: false, conflicts: [] };
+        }
+      }
+
+      if(act.groupRules && act.groupRules.length > 0){
+        for(const gr of act.groupRules){
+          if(details.buoi === "sang" && gr.allowMorning === false) return { possible: false, conflicts: [] };
+          if(details.buoi === "chieu" && gr.allowAfternoon === false) return { possible: false, conflicts: [] };
+        }
       }
 
       const conflictsSet = new Set();
@@ -1443,8 +2285,16 @@
         if(this.offSlots.has(`${act.classId}|${s}`)) return { possible: false, conflicts: [] };
         if(this.fixedSlots.has(`${act.classId}|${s}`)) return { possible: false, conflicts: [] };
         if(this.subjectOffSlots && act.mon){
-          if(this.subjectOffSlots.has(`${act.canonKey}|${s}`) || this.subjectOffSlots.has(`${this.normalizeMonName(act.mon)}|${s}`)){
+          const normMon = act.normMon || this.normalizeMonName(act.mon);
+          if(this.subjectOffSlots.has(`${act.canonKey}|${s}`) ||
+             (act.ruleSubjKey && this.subjectOffSlots.has(`${act.ruleSubjKey}|${s}`)) ||
+             this.subjectOffSlots.has(`${normMon}|${s}`)){
             return { possible: false, conflicts: [] };
+          }
+        }
+        if(this.subjectGroupOffSlots && act.groupIds && act.groupIds.length > 0){
+          for(const gid of act.groupIds){
+            if(this.subjectGroupOffSlots.has(`${gid}|${s}`)) return { possible: false, conflicts: [] };
           }
         }
 
@@ -1455,8 +2305,9 @@
 
         // Teacher grid & off check
         if(act.gv){
-          const tList = parseTeacherList(act.gv);
-          for(const t of tList){
+          const tList = act.teacherList || parseTeacherList(act.gv);
+          for(let ti = 0; ti < tList.length; ti++){
+            const t = tList[ti];
             if(this.teacherOffSlots.has(`${t}|${s}`)){
               return { possible: false, conflicts: [] }; // Teacher is off at this slot!
             }
@@ -1474,7 +2325,7 @@
 
         // Room grid & off check
         if(act.room){
-          const rKey = act.room.trim().toLowerCase();
+          const rKey = act.roomKey || act.room.trim().toLowerCase();
           if(this.roomOffSlots.has(`${rKey}|${s}`)){
             return { possible: false, conflicts: [] }; // Room is off at this slot!
           }
@@ -1489,11 +2340,337 @@
         }
       }
 
+      const sessionStartSlot = details.dayIdx * SLOTS_PER_DAY + details.sessionIdx * PERIODS_PER_SESSION;
+      const dayStartSlot = details.dayIdx * SLOTS_PER_DAY;
+      const cGrid = this.classGrid.get(act.classId);
+      const actCanon = act.canonKey || this.getCanonMonKey(act.mon);
+      const actRuleSubj = act.ruleSubjKey || this.getRuleSubjKey(act.mon);
+
+      // Subject No-Same-Session & No-Same-Day checks
+      if(cGrid && act.noSameSessionForbidden && act.noSameSessionForbidden.size > 0){
+        for(let pi = 0; pi < PERIODS_PER_SESSION; pi++){
+          const s = sessionStartSlot + pi;
+          if(s >= slot && s < slot + act.duration) continue;
+          const cell = cGrid[s];
+          if(cell >= 0 && cell !== act.id && !conflictsSet.has(cell)){
+            const oAct = this.activities[cell];
+            const oKey = oAct ? oAct.ruleSubjKey : "";
+            if(oKey && act.noSameSessionForbidden.has(oKey)) conflictsSet.add(cell);
+          }else if(cell === -3){
+            const fix = this.fixedSlots.get(`${act.classId}|${s}`);
+            const oKey = fix ? (fix.ruleSubjKey || this.getRuleSubjKey(fix.mon)) : "";
+            if(oKey && act.noSameSessionForbidden.has(oKey)) return { possible: false, conflicts: [] };
+          }
+        }
+      }
+
+      if(cGrid && act.noSameDayForbidden && act.noSameDayForbidden.size > 0){
+        for(let pi = 0; pi < SLOTS_PER_DAY; pi++){
+          const s = dayStartSlot + pi;
+          if(s >= slot && s < slot + act.duration) continue;
+          const cell = cGrid[s];
+          if(cell >= 0 && cell !== act.id && !conflictsSet.has(cell)){
+            const oAct = this.activities[cell];
+            const oKey = oAct ? oAct.ruleSubjKey : "";
+            if(oKey && act.noSameDayForbidden.has(oKey)) conflictsSet.add(cell);
+          }else if(cell === -3){
+            const fix = this.fixedSlots.get(`${act.classId}|${s}`);
+            const oKey = fix ? (fix.ruleSubjKey || this.getRuleSubjKey(fix.mon)) : "";
+            if(oKey && act.noSameDayForbidden.has(oKey)) return { possible: false, conflicts: [] };
+          }
+        }
+      }
+
+      // Subject oneSessionPerDay & spacingDays checks
+      if(cGrid && sr){
+        if(sr.oneSessionPerDay){
+          const otherSessionStart = dayStartSlot + (1 - details.sessionIdx) * PERIODS_PER_SESSION;
+          for(let pi = 0; pi < PERIODS_PER_SESSION; pi++){
+            const s = otherSessionStart + pi;
+            const cell = cGrid[s];
+            if(cell >= 0 && cell !== act.id && !conflictsSet.has(cell)){
+              const oAct = this.activities[cell];
+              if(oAct && (oAct.ruleSubjKey === actRuleSubj || oAct.canonKey === actCanon)){
+                conflictsSet.add(cell);
+              }
+            }else if(cell === -3){
+              const fix = this.fixedSlots.get(`${act.classId}|${s}`);
+              if(fix && (fix.ruleSubjKey === actRuleSubj || fix.canonKey === actCanon)){
+                return { possible: false, conflicts: [] };
+              }
+            }
+          }
+        }
+
+        if(sr.spacingDays > 0){
+          for(let od = 0; od < DAYS_LIST.length; od++){
+            if(od === details.dayIdx || Math.abs(od - details.dayIdx) > sr.spacingDays) continue;
+            const odStart = od * SLOTS_PER_DAY;
+            for(let pi = 0; pi < SLOTS_PER_DAY; pi++){
+              const s = odStart + pi;
+              const cell = cGrid[s];
+              if(cell >= 0 && cell !== act.id && !conflictsSet.has(cell)){
+                const oAct = this.activities[cell];
+                if(oAct && (oAct.ruleSubjKey === actRuleSubj || oAct.canonKey === actCanon)){
+                  conflictsSet.add(cell);
+                }
+              }else if(cell === -3){
+                const fix = this.fixedSlots.get(`${act.classId}|${s}`);
+                if(fix && (fix.ruleSubjKey === actRuleSubj || fix.canonKey === actCanon)){
+                  return { possible: false, conflicts: [] };
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Subject Group Rules checks
+      if(cGrid && act.groupRules && act.groupRules.length > 0){
+        for(const gr of act.groupRules){
+          if(gr.oneSessionPerDay){
+            const otherSessionStart = dayStartSlot + (1 - details.sessionIdx) * PERIODS_PER_SESSION;
+            for(let pi = 0; pi < PERIODS_PER_SESSION; pi++){
+              const s = otherSessionStart + pi;
+              const cell = cGrid[s];
+              if(cell >= 0 && cell !== act.id && !conflictsSet.has(cell)){
+                const oAct = this.activities[cell];
+                if(oAct && gr.subjectSet.has(oAct.ruleSubjKey)){
+                  conflictsSet.add(cell);
+                }
+              }else if(cell === -3){
+                const fix = this.fixedSlots.get(`${act.classId}|${s}`);
+                if(fix && gr.subjectSet.has(fix.ruleSubjKey || this.getRuleSubjKey(fix.mon))){
+                  return { possible: false, conflicts: [] };
+                }
+              }
+            }
+          }
+
+          const gDayCap = gr.maxPeriodsDay ? (gr.maxPeriodsDay[details.thu] || 0) : 0;
+          if(gr.maxPeriodsSang > 0 || gr.maxPeriodsChieu > 0 || gDayCap > 0 ||
+             gr.maxSubjectsSang > 0 || gr.maxSubjectsChieu > 0 || gr.maxSubjectsDay > 0 ||
+             gr.weeklyMorningMax > 0 || gr.weeklyAfternoonMax > 0 ||
+             gr.maxSessionsMorning > 0 || gr.maxSessionsAfternoon > 0 || gr.maxSessionsWeek > 0){
+            let mPer = 0, aPer = 0, mSes = 0, aSes = 0, dayPer = 0, curSessPer = 0;
+            const curSessSubjs = new Set([actRuleSubj]);
+            const curDaySubjs = new Set([actRuleSubj]);
+            for(let d2 = 0; d2 < DAYS_LIST.length; d2++){
+              for(let b2 = 0; b2 < SESSIONS_LIST.length; b2++){
+                const st2 = d2 * SLOTS_PER_DAY + b2 * PERIODS_PER_SESSION;
+                let cnt = 0;
+                for(let p2 = 0; p2 < PERIODS_PER_SESSION; p2++){
+                  const sc = st2 + p2;
+                  if(sc >= slot && sc < slot + act.duration){
+                    cnt++;
+                  }else{
+                    const cell = cGrid[sc];
+                    let rKey = "";
+                    if(cell >= 0 && cell !== act.id && !conflictsSet.has(cell)){
+                      const a2 = this.activities[cell];
+                      if(a2) rKey = a2.ruleSubjKey;
+                    }else if(cell === -3){
+                      const fix2 = this.fixedSlots.get(`${act.classId}|${sc}`);
+                      if(fix2) rKey = fix2.ruleSubjKey || this.getRuleSubjKey(fix2.mon);
+                    }
+                    if(rKey && gr.subjectSet.has(rKey)){
+                      cnt++;
+                      if(d2 === details.dayIdx){
+                        curDaySubjs.add(rKey);
+                        if(b2 === details.sessionIdx) curSessSubjs.add(rKey);
+                      }
+                    }
+                  }
+                }
+                if(cnt > 0){
+                  if(b2 === 0){ mPer += cnt; mSes++; }
+                  else{ aPer += cnt; aSes++; }
+                  if(d2 === details.dayIdx){
+                    dayPer += cnt;
+                    if(b2 === details.sessionIdx) curSessPer = cnt;
+                  }
+                }
+              }
+            }
+            if(details.buoi === "sang" && gr.maxPeriodsSang > 0 && curSessPer > gr.maxPeriodsSang) return { possible: false, conflicts: [] };
+            if(details.buoi === "chieu" && gr.maxPeriodsChieu > 0 && curSessPer > gr.maxPeriodsChieu) return { possible: false, conflicts: [] };
+            if(gDayCap > 0 && dayPer > gDayCap) return { possible: false, conflicts: [] };
+            if(details.buoi === "sang" && gr.maxSubjectsSang > 0 && curSessSubjs.size > gr.maxSubjectsSang) return { possible: false, conflicts: [] };
+            if(details.buoi === "chieu" && gr.maxSubjectsChieu > 0 && curSessSubjs.size > gr.maxSubjectsChieu) return { possible: false, conflicts: [] };
+            if(gr.maxSubjectsDay > 0 && curDaySubjs.size > gr.maxSubjectsDay) return { possible: false, conflicts: [] };
+            if(gr.weeklyMorningMax > 0 && mPer > gr.weeklyMorningMax) return { possible: false, conflicts: [] };
+            if(gr.weeklyAfternoonMax > 0 && aPer > gr.weeklyAfternoonMax) return { possible: false, conflicts: [] };
+            if(gr.maxSessionsMorning > 0 && mSes > gr.maxSessionsMorning) return { possible: false, conflicts: [] };
+            if(gr.maxSessionsAfternoon > 0 && aSes > gr.maxSessionsAfternoon) return { possible: false, conflicts: [] };
+            if(gr.maxSessionsWeek > 0 && (mSes + aSes) > gr.maxSessionsWeek) return { possible: false, conflicts: [] };
+          }
+        }
+      }
+
+      // Teacher Constraints (Location, Movement, OneSessionPerDay, NoMorningP5AfternoonP1, Load Caps)
+      if(act.gv && this.teacherRules && this.teacherRules.size > 0){
+        const tList = act.teacherList || parseTeacherList(act.gv);
+        const thu = details.thu, buoi = details.buoi, dIdx = details.dayIdx, sIdx = details.sessionIdx;
+        for(let ti = 0; ti < tList.length; ti++){
+          const t = tList[ti];
+          const tr = this.teacherRules.get(t);
+          if(!tr) continue;
+          const tGrid = this.teacherGrid.get(t);
+
+          if(tr.oneSessionPerDay){
+            if(tr.oneSessionPerDay.morning?.[thu] && buoi === "chieu") return { possible: false, conflicts: [] };
+            if(tr.oneSessionPerDay.afternoon?.[thu] && buoi === "sang") return { possible: false, conflicts: [] };
+            if(tr.oneSessionPerDay.either?.[thu] && tGrid){
+              const otherSessionStart = dIdx * SLOTS_PER_DAY + (1 - sIdx) * PERIODS_PER_SESSION;
+              for(let pi = 0; pi < PERIODS_PER_SESSION; pi++){
+                const os = otherSessionStart + pi;
+                const tc = tGrid[os];
+                if(tc === -3) return { possible: false, conflicts: [] };
+                if(tc >= 0 && tc !== act.id) conflictsSet.add(tc);
+              }
+            }
+          }
+
+          if(tr.noMorningP5AfternoonP1 && tGrid){
+            const mP5 = dIdx * SLOTS_PER_DAY + 4;
+            const aP1 = dIdx * SLOTS_PER_DAY + 5;
+            if(slot <= mP5 && slot + act.duration - 1 >= mP5){
+              const tc = tGrid[aP1];
+              if(tc === -3) return { possible: false, conflicts: [] };
+              if(tc >= 0 && tc !== act.id) conflictsSet.add(tc);
+            }
+            if(slot <= aP1 && slot + act.duration - 1 >= aP1){
+              const tc = tGrid[mP5];
+              if(tc === -3) return { possible: false, conflicts: [] };
+              if(tc >= 0 && tc !== act.id) conflictsSet.add(tc);
+            }
+          }
+
+          if(tr.hasLocationRules && tGrid){
+            const actLoc = act.normLoc !== undefined ? act.normLoc : this.getRoomLocation(act.room, act.lop);
+            const oneLoc = !!(tr.oneLocationPerSession?.[buoi]?.[thu]);
+            const needGap = !!(tr.gapBetweenLocations?.[buoi]?.[thu]);
+            const allow23 = !!(tr.moveAtBreak23?.[buoi]?.[thu]);
+            const allow34 = !!(tr.moveAtBreak34?.[buoi]?.[thu]);
+            const maxOneMove = !!(tr.maxOneMovePerSession?.[buoi]?.[thu]);
+
+            if(oneLoc || needGap || allow23 || allow34 || maxOneMove){
+              for(let pi = 0; pi < PERIODS_PER_SESSION; pi++){
+                const sc = sessionStartSlot + pi;
+                if(sc >= slot && sc < slot + act.duration) continue;
+                const tc = tGrid[sc];
+                let otherLoc = "";
+                if(tc >= 0 && tc !== act.id && !conflictsSet.has(tc)){
+                  const oAct = this.activities[tc];
+                  otherLoc = oAct ? (oAct.normLoc !== undefined ? oAct.normLoc : this.getRoomLocation(oAct.room, oAct.lop)) : "";
+                }else if(tc === -3){
+                  otherLoc = (this.teacherFixedLocMap && this.teacherFixedLocMap.get(`${t}|${sc}`)) || "";
+                }else{
+                  continue;
+                }
+
+                if(!actLoc || !otherLoc || actLoc === otherLoc) continue;
+
+                if(oneLoc){
+                  if(tc === -3) return { possible: false, conflicts: [] };
+                  conflictsSet.add(tc);
+                  continue;
+                }
+
+                if(needGap || allow23 || allow34){
+                  let isAdjacent = false;
+                  let transitionIdx = -1;
+                  if(pi === details.periodIdx - 1){ isAdjacent = true; transitionIdx = pi; }
+                  else if(pi === endPeriod + 1){ isAdjacent = true; transitionIdx = endPeriod; }
+                  if(isAdjacent){
+                    let adjAllowed = true;
+                    if(needGap) adjAllowed = false;
+                    if(allow23 && transitionIdx === 1) adjAllowed = true;
+                    if(allow34 && transitionIdx === 2) adjAllowed = true;
+                    if(!needGap && (allow23 || allow34)){
+                      adjAllowed = (allow23 && transitionIdx === 1) || (allow34 && transitionIdx === 2);
+                    }
+                    if(!adjAllowed){
+                      if(tc === -3) return { possible: false, conflicts: [] };
+                      conflictsSet.add(tc);
+                    }
+                  }
+                }
+              }
+
+              if(maxOneMove){
+                const locSeq = [];
+                for(let pi = 0; pi < PERIODS_PER_SESSION; pi++){
+                  const sc = sessionStartSlot + pi;
+                  let lVal = "";
+                  if(sc >= slot && sc < slot + act.duration){
+                    lVal = actLoc;
+                  }else{
+                    const tc = tGrid[sc];
+                    if(tc >= 0 && tc !== act.id && !conflictsSet.has(tc)){
+                      const oAct = this.activities[tc];
+                      lVal = oAct ? (oAct.normLoc !== undefined ? oAct.normLoc : this.getRoomLocation(oAct.room, oAct.lop)) : "";
+                    }else if(tc === -3){
+                      lVal = (this.teacherFixedLocMap && this.teacherFixedLocMap.get(`${t}|${sc}`)) || "";
+                    }
+                  }
+                  if(lVal) locSeq.push(lVal);
+                }
+                let moves = 0;
+                for(let k = 1; k < locSeq.length; k++){
+                  if(locSeq[k] !== locSeq[k - 1]) moves++;
+                }
+                if(moves > 1) return { possible: false, conflicts: [] };
+              }
+            }
+          }
+
+          if(tr.hasLoadCaps && tGrid){
+            let mSes = 0, aSes = 0, activeDays = 0, curSessPer = 0, curDayPer = 0;
+            for(let d2 = 0; d2 < DAYS_LIST.length; d2++){
+              let dayHas = false;
+              for(let b2 = 0; b2 < SESSIONS_LIST.length; b2++){
+                const st2 = d2 * SLOTS_PER_DAY + b2 * PERIODS_PER_SESSION;
+                let cnt = 0;
+                for(let p2 = 0; p2 < PERIODS_PER_SESSION; p2++){
+                  const sc = st2 + p2;
+                  if(sc >= slot && sc < slot + act.duration){
+                    cnt++;
+                  }else{
+                    const tc = tGrid[sc];
+                    if((tc >= 0 && tc !== act.id && !conflictsSet.has(tc)) || tc === -3) cnt++;
+                  }
+                }
+                if(cnt > 0){
+                  dayHas = true;
+                  if(b2 === 0) mSes++;
+                  else aSes++;
+                  if(d2 === dIdx){
+                    curDayPer += cnt;
+                    if(b2 === sIdx) curSessPer = cnt;
+                  }
+                }
+              }
+              if(dayHas) activeDays++;
+            }
+            if(buoi === "sang" && tr.maxPeriodsSang > 0 && curSessPer > tr.maxPeriodsSang) return { possible: false, conflicts: [] };
+            if(buoi === "chieu" && tr.maxPeriodsChieu > 0 && curSessPer > tr.maxPeriodsChieu) return { possible: false, conflicts: [] };
+            const tDayCap = tr.maxPeriodsDay ? (tr.maxPeriodsDay[thu] || 0) : 0;
+            if(tDayCap > 0 && curDayPer > tDayCap) return { possible: false, conflicts: [] };
+            if(tr.maxMorning > 0 && mSes > tr.maxMorning) return { possible: false, conflicts: [] };
+            if(tr.maxAfternoon > 0 && aSes > tr.maxAfternoon) return { possible: false, conflicts: [] };
+            if(tr.maxDays > 0 && activeDays > tr.maxDays) return { possible: false, conflicts: [] };
+            if(tr.maxSessions > 0 && (mSes + aSes) > tr.maxSessions) return { possible: false, conflicts: [] };
+          }
+        }
+      }
+
       // Native FET Constraint: Teachers Max Consecutive Gap = 1 & Max Gaps Per Session = 1
       if(this.strictFetGaps && act.gv){
         const sessionStart = details.dayIdx * SLOTS_PER_DAY + details.sessionIdx * PERIODS_PER_SESSION;
-        const tList = parseTeacherList(act.gv);
-        for(const t of tList){
+        const tList = act.teacherList || parseTeacherList(act.gv);
+        for(let ti = 0; ti < tList.length; ti++){
+          const t = tList[ti];
           const tGrid = this.teacherGrid.get(t);
           if(!tGrid) continue;
 
@@ -1526,45 +2703,131 @@
 
       // Strict Session Subject Contiguity & Upper Limit Check
       // (Các tiết cùng môn học trong cùng 1 buổi BẮT BUỘC PHẢI XẾP LIỀN NHAU và không vượt quá giới hạn trên)
-      const sessionStartSlot = details.dayIdx * SLOTS_PER_DAY + details.sessionIdx * PERIODS_PER_SESSION;
-      const sessionEndSlot = sessionStartSlot + PERIODS_PER_SESSION;
-      const maxPerSession = this.getSubjectSessionLimit(act.lop, act.mon);
-      const actCanon = this.getCanonMonKey(act.mon);
+      const maxPerSession = act.maxSessionLimit || this.getSubjectSessionLimit(act.lop, act.mon);
 
       const subjectPeriods = [];
       for(let pi = 0; pi < PERIODS_PER_SESSION; pi++){
         const s = sessionStartSlot + pi;
         if(s >= slot && s < slot + act.duration){
           subjectPeriods.push(pi);
-        }else{
-          const existingActId = this.classGrid.get(act.classId)[s];
-          if(existingActId >= 0){
+        }else if(cGrid){
+          const existingActId = cGrid[s];
+          if(existingActId >= 0 && existingActId !== act.id){
             if(!conflictsSet.has(existingActId)){
               const existingAct = this.activities[existingActId];
-              if(existingAct && this.getCanonMonKey(existingAct.mon) === actCanon){
+              if(existingAct && (existingAct.ruleSubjKey === actRuleSubj || existingAct.canonKey === actCanon)){
                 subjectPeriods.push(pi);
               }
             }
-          }else if(this.fixedSlots.has(`${act.classId}|${s}`)){
+          }else if(existingActId === -3){
             const fix = this.fixedSlots.get(`${act.classId}|${s}`);
-            if(fix && fix.mon && this.getCanonMonKey(fix.mon) === actCanon){
+            if(fix && (fix.ruleSubjKey === actRuleSubj || fix.canonKey === actCanon)){
               subjectPeriods.push(pi);
             }
           }
         }
       }
 
-      // 1. Tuyệt đối không được vượt quá giới hạn trên
       if(subjectPeriods.length > maxPerSession){
         return { possible: false, conflicts: [] };
       }
 
-      // 2. Bắt buộc các tiết cùng môn trong cùng 1 buổi phải xếp LIỀN NHAU (Contiguous)
       if(subjectPeriods.length >= 2){
         subjectPeriods.sort((a, b) => a - b);
         const span = subjectPeriods[subjectPeriods.length - 1] - subjectPeriods[0] + 1;
         if(span !== subjectPeriods.length){
-          return { possible: false, conflicts: [] }; // Bị tách rời không liền nhau -> Chặn tuyệt đối!
+          return { possible: false, conflicts: [] };
+        }
+        if(sr){
+          const av23 = details.buoi === "sang" ? sr.avoid23Morning : sr.avoid23Afternoon;
+          const av34 = details.buoi === "sang" ? sr.avoid34Morning : sr.avoid34Afternoon;
+          if(av23 && subjectPeriods.includes(1) && subjectPeriods.includes(2)) return { possible: false, conflicts: [] };
+          if(av34 && subjectPeriods.includes(2) && subjectPeriods.includes(3)) return { possible: false, conflicts: [] };
+          if(sr.linkedDaysAvoid && sr.linkedDaysAvoid.has(`${details.buoi}|${details.thu}`)) return { possible: false, conflicts: [] };
+        }
+        if(cGrid && this.classSubjectLessonBlocks && this.classSubjectLessonBlocks.size > 0){
+          for(let len = 2; len <= subjectPeriods.length; len++){
+            const req = this.classSubjectLessonBlocks.get(`${act.classId}|${actCanon}|${len}`) ||
+                        this.classSubjectLessonBlocks.get(`${act.classCanon}|${actCanon}|${len}`);
+            if(req && Number.isFinite(req.max)){
+              let totalBlocks = (subjectPeriods.length - len + 1);
+              for(let d2 = 0; d2 < DAYS_LIST.length; d2++){
+                for(let b2 = 0; b2 < SESSIONS_LIST.length; b2++){
+                  if(d2 === details.dayIdx && b2 === details.sessionIdx) continue;
+                  const st2 = d2 * SLOTS_PER_DAY + b2 * PERIODS_PER_SESSION;
+                  const idx2 = [];
+                  for(let p2 = 0; p2 < PERIODS_PER_SESSION; p2++){
+                    const cidCell = cGrid[st2 + p2];
+                    if(cidCell >= 0 && cidCell !== act.id && !conflictsSet.has(cidCell)){
+                      const a2 = this.activities[cidCell];
+                      if(a2 && a2.canonKey === actCanon) idx2.push(p2 + 1);
+                    }else if(cidCell === -3){
+                      const fix2 = this.fixedSlots.get(`${act.classId}|${st2 + p2}`);
+                      if(fix2 && fix2.canonKey === actCanon) idx2.push(p2 + 1);
+                    }
+                  }
+                  if(idx2.length >= len){
+                    const sSet2 = new Set(idx2);
+                    for(const i2 of idx2){
+                      let ok2 = true;
+                      for(let k2 = 0; k2 < len; k2++){
+                        if(!sSet2.has(i2 + k2)) ok2 = false;
+                      }
+                      if(ok2 && !sSet2.has(i2 - 1)) totalBlocks++;
+                    }
+                  }
+                }
+              }
+              if(totalBlocks > req.max) return { possible: false, conflicts: [] };
+            }
+          }
+        }
+      }
+
+      // 3. Subject maxPeriods / weeklySessionPeriods / maxSessions caps
+      if(cGrid && sr){
+        if(details.buoi === "sang" && sr.maxPeriodsSang > 0 && subjectPeriods.length > sr.maxPeriodsSang){
+          return { possible: false, conflicts: [] };
+        }
+        if(details.buoi === "chieu" && sr.maxPeriodsChieu > 0 && subjectPeriods.length > sr.maxPeriodsChieu){
+          return { possible: false, conflicts: [] };
+        }
+        const dayCap = sr.maxPeriodsDay ? (sr.maxPeriodsDay[details.thu] || 0) : 0;
+        if(dayCap > 0 || sr.weeklyMorningMax > 0 || sr.weeklyAfternoonMax > 0 ||
+           sr.maxSessionsMorning > 0 || sr.maxSessionsAfternoon > 0 || sr.maxSessionsWeek > 0){
+          let mPeriods = 0, aPeriods = 0, mSess = 0, aSess = 0, curDayPeriods = 0;
+          for(let d2 = 0; d2 < DAYS_LIST.length; d2++){
+            for(let b2 = 0; b2 < SESSIONS_LIST.length; b2++){
+              let cnt = 0;
+              if(d2 === details.dayIdx && b2 === details.sessionIdx){
+                cnt = subjectPeriods.length;
+              }else{
+                const st2 = d2 * SLOTS_PER_DAY + b2 * PERIODS_PER_SESSION;
+                for(let p2 = 0; p2 < PERIODS_PER_SESSION; p2++){
+                  const sc = st2 + p2;
+                  const cell = cGrid[sc];
+                  if(cell >= 0 && cell !== act.id && !conflictsSet.has(cell)){
+                    const a2 = this.activities[cell];
+                    if(a2 && (a2.ruleSubjKey === actRuleSubj || a2.canonKey === actCanon)) cnt++;
+                  }else if(cell === -3){
+                    const fix2 = this.fixedSlots.get(`${act.classId}|${sc}`);
+                    if(fix2 && (fix2.ruleSubjKey === actRuleSubj || fix2.canonKey === actCanon)) cnt++;
+                  }
+                }
+              }
+              if(cnt > 0){
+                if(b2 === 0){ mPeriods += cnt; mSess++; }
+                else{ aPeriods += cnt; aSess++; }
+                if(d2 === details.dayIdx) curDayPeriods += cnt;
+              }
+            }
+          }
+          if(dayCap > 0 && curDayPeriods > dayCap) return { possible: false, conflicts: [] };
+          if(sr.weeklyMorningMax > 0 && mPeriods > sr.weeklyMorningMax) return { possible: false, conflicts: [] };
+          if(sr.weeklyAfternoonMax > 0 && aPeriods > sr.weeklyAfternoonMax) return { possible: false, conflicts: [] };
+          if(sr.maxSessionsMorning > 0 && mSess > sr.maxSessionsMorning) return { possible: false, conflicts: [] };
+          if(sr.maxSessionsAfternoon > 0 && aSess > sr.maxSessionsAfternoon) return { possible: false, conflicts: [] };
+          if(sr.maxSessionsWeek > 0 && (mSess + aSess) > sr.maxSessionsWeek) return { possible: false, conflicts: [] };
         }
       }
 
@@ -1581,7 +2844,7 @@
     // (Bỏ ưu tiên ngày dạy)
     getPlacementPenalty(act, slot){
       if(!act.gv) return 0;
-      const tList = parseTeacherList(act.gv);
+      const tList = act.teacherList || parseTeacherList(act.gv);
       if(tList.length === 0) return 0;
 
       const d = Math.floor(slot / SLOTS_PER_DAY);
@@ -1594,6 +2857,16 @@
       for(const t of tList){
         const tGrid = this.teacherGrid.get(t);
         if(!tGrid) continue;
+        if(this.teacherRules){
+          const tr = this.teacherRules.get(t);
+          if(tr && tr.mustTeachSlots && tr.mustTeachSlots.size > 0){
+            for(let od = 0; od < (act.duration || 1); od++){
+              if(tr.mustTeachSlots.has(slot + od) && tGrid[slot + od] === -1){
+                penalty -= 5000;
+              }
+            }
+          }
+        }
 
         let dayTaught = 0;
         const dayStart = d * SLOTS_PER_DAY;
@@ -2130,7 +3403,7 @@
       }
 
       // Multi-pass exhaustive placement for remaining activities
-      for(let pass = 0; pass < 20; pass++){
+      for(let pass = 0; pass < 8; pass++){
         const unplacedActs = this.activities.filter(a => this.actPlacement[a.id] < 0);
         if(unplacedActs.length === 0) break;
         if(this.__solveDeadlineHit || Date.now() > this.__solveDeadlineAt){
@@ -2149,14 +3422,43 @@
         // nghien cuu) ma giu strictFetGaps=true lam buoc xay dung cham gap ~24
         // lan (2s -> 48s tren cung bo du lieu) — nut "Sap xep" chay engine FET
         // trong trinh duyet nen nguoi dung cam nhan ngay.
-        if(pass >= 6){
+        if(pass >= 1){
+          this.tabuMap.clear();
+          this.swappedInBranch.clear();
           this.__minTwoGuardActive = false;
           this.strictFetGaps = false;
         }
 
         // Luot sau tim sau hon (chuoi day day hon) cho nhung tiet kho nhat.
-        this.limitCalls = Math.max(8000, 10 * this.activities.length) * (1 + Math.min(4, Math.floor(pass / 4)));
+        this.limitCalls = pass === 0
+          ? Math.max(4000, 5 * this.activities.length)
+          : Math.max(8000, 10 * this.activities.length) * (1 + Math.min(3, Math.floor(pass / 2)));
         for(const uAct of unplacedActs){
+          if(this.actPlacement[uAct.id] >= 0) continue;
+          if(pass >= 1 && typeof this.tryEjectionChain === "function" && this.tryEjectionChain(uAct.id) && this.actPlacement[uAct.id] >= 0){
+            continue;
+          }
+          if(pass >= 1 && uAct.gv && (uAct.duration || 1) === 1){
+            const cGrid = this.classGrid.get(uAct.classId);
+            const tGrids = (uAct.teacherList || parseTeacherList(uAct.gv)).map(t => this.teacherGrid.get(t)).filter(Boolean);
+            const tFreeSlots = [];
+            if(cGrid && tGrids.length){
+              for(let s = 0; s < TOTAL_SLOTS; s++){
+                if(cGrid[s] === -2 || cGrid[s] === -3) continue;
+                let busy = false;
+                for(const g of tGrids){
+                  if(g[s] === -2 || g[s] === -3 || g[s] >= 0){ busy = true; break; }
+                }
+                if(!busy) tFreeSlots.push(s);
+              }
+            }
+            if(tFreeSlots.length > 0){
+              this.nCalls = 0;
+              if(this.randomSwap(uAct.id, 0, tFreeSlots) && this.actPlacement[uAct.id] >= 0){
+                continue;
+              }
+            }
+          }
           this.nCalls = 0;
           this.randomSwap(uAct.id, 0);
         }
@@ -2198,6 +3500,13 @@
         else unassigned += act.duration;
       });
       placed += this.fixedSlots.size;
+
+      if(unassigned === 0 && this.options.skipPostSolvePolish !== true){
+        const remainMs = this.__solveDeadlineAt ? (this.__solveDeadlineAt - Date.now()) : 2500;
+        if(remainMs > 400){
+          this.quickPostSolvePolish(Math.min(2500, Math.max(600, remainMs - 200)));
+        }
+      }
 
       return {
         ok: unassigned === 0,
@@ -2244,11 +3553,29 @@
           if(teacherBusy) continue;
           slots.push(s);
         }
-        if(!slots.length) continue;
-        this.rng.shuffle(slots);
-        this.nCalls = 0;
-        this.limitCalls = Math.max(40000, 40 * this.activities.length);
-        if(this.randomSwap(act.id, 0, slots)) repaired++;
+        const savedStrict = this.strictFetGaps;
+        this.strictFetGaps = false;
+        this.tabuMap.clear();
+        this.swappedInBranch.clear();
+        let placed = false;
+        if(typeof this.tryEjectionChain === "function" && this.tryEjectionChain(act.id) && this.actPlacement[act.id] >= 0){
+          placed = true;
+        }
+        if(!placed && slots.length){
+          this.rng.shuffle(slots);
+          this.nCalls = 0;
+          this.limitCalls = Math.max(40000, 40 * this.activities.length);
+          placed = this.randomSwap(act.id, 0, slots);
+        }
+        if(!placed){
+          this.tabuMap.clear();
+          this.swappedInBranch.clear();
+          this.nCalls = 0;
+          this.limitCalls = Math.max(60000, 60 * this.activities.length);
+          placed = this.randomSwap(act.id, 0);
+        }
+        this.strictFetGaps = savedStrict;
+        if(placed) repaired++;
       }
       return repaired;
     }
@@ -2280,7 +3607,10 @@
               const slot = detailsToSlot(thu, buoi, ti);
               const key = `${cid}|${slot}`;
               if(this.fixedRawCells.has(key)){
-                data.tkb[cid][thu][buoi][ti] = this.fixedRawCells.get(key);
+                const rawFixed = this.fixedRawCells.get(key);
+                data.tkb[cid][thu][buoi][ti] = (rawFixed && typeof rawFixed === "object" && rawFixed.jointPin)
+                  ? this.extractMon(rawFixed)
+                  : rawFixed;
               }else if(this.offSlots.has(key)){
                 data.tkb[cid][thu][buoi][ti] = "OFF";
               }else{
@@ -2400,25 +3730,68 @@
       return { soNgayMotTiet, soBuoiDay1, soBuoiDay2, soBuoiDay3, tsBuoiDay, tsNgayDay, soBuoiTrong1, soBuoiTrong2 };
     }
 
+    quickPostSolvePolish(budgetMs = 2500){
+      const deadline = Date.now() + budgetMs;
+      this.opDeadlineMs = deadline;
+      const savedTkb = JSON.parse(JSON.stringify(this.data.tkb));
+      this.loadExistingSchedule();
+      this.__studentHoleBaseline = this.countStudentHoles();
+      this.strictFetGaps = false;
+      let bestM = this.evaluateMetrics();
+      try{
+        for(let pass = 0; pass < 4; pass++){
+          if(Date.now() > deadline) break;
+          let changed = false;
+          if(bestM.soBuoiTrong2 > 0){
+            const gM = this.tryGapRelabelCycles(bestM, bestM, "optimize_gap2");
+            if(gM && this.compareTuple(gM, bestM) < 0){ bestM = { ...gM }; changed = true; }
+            const cM = this.tryCrushTeacherGaps(bestM, bestM, "optimize_gap2");
+            if(cM && this.compareTuple(cM, bestM) < 0){ bestM = { ...cM }; changed = true; }
+          }
+          if(Date.now() > deadline) break;
+          const fM = this.tryFastSingletonRepair(bestM, bestM);
+          if(fM && this.compareTuple(fM, bestM) < 0){ bestM = { ...fM }; changed = true; }
+          if(Date.now() > deadline) break;
+          const rM = this.trySingletonRelabelCycles(bestM, bestM);
+          if(rM && this.compareTuple(rM, bestM) < 0){ bestM = { ...rM }; changed = true; }
+          if(Date.now() > deadline) break;
+          const oM = this.obliterateAllTeacherSingletons(4, bestM.soBuoiTrong2);
+          if(oM && this.compareTuple(oM, bestM) < 0){ bestM = { ...oM }; changed = true; }
+          if(Date.now() > deadline) break;
+          const vM = this.obliterateAllThinTeacherSessions(3, [1], bestM.soBuoiTrong2, null, "optimize_singletons");
+          if(vM && this.compareTuple(vM, bestM) < 0){ bestM = { ...vM }; changed = true; }
+          if(!changed) break;
+        }
+      }finally{
+        this.opDeadlineMs = 0;
+      }
+      if(this.verifyPlacementIntegrity()){
+        this.applyToDataTKB();
+      }else{
+        this.data.tkb = savedTkb;
+        this.loadExistingSchedule();
+      }
+    }
+
     loadExistingSchedule(){
       this.init();
       const data = this.data;
       const actList = [];
       let actCounter = 0;
 
-      // 1. Load currently placed movable cells with intelligent pair preservation
+      // 1. Load currently placed movable cells as duration=1 (isLessonBlockSafe strictly enforces lessonBlocks on classGrid)
       this.classes.forEach(lop => {
         const cid = String(lop.id || "");
         const classCanon = lop.ten2 || lop.ten || cid;
+        const placedByNorm = new Map();
+
         DAYS_LIST.forEach(thu => {
           SESSIONS_LIST.forEach(buoi => {
             const arr = data.tkb?.[cid]?.[thu]?.[buoi] || [];
-            let ti = 0;
-            while(ti < PERIODS_PER_SESSION){
+            for(let ti = 0; ti < PERIODS_PER_SESSION; ti++){
               const slot = detailsToSlot(thu, buoi, ti);
               const cell = arr[ti];
               if(!cell || cell === "OFF" || this.isCellOff(cell) || this.isCellFixed(cell, cid, slot)){
-                ti++;
                 continue;
               }
 
@@ -2426,28 +3799,10 @@
               const sCanon = this.getCanonMonKey(mon);
               const gv = this.getTeacherForClassMon(lop, mon);
               const rm = this.getRoomForClassMon(lop, mon);
+              const mNorm = this.normalizeMonName(mon);
+              placedByNorm.set(mNorm, (placedByNorm.get(mNorm) || 0) + 1);
 
-              // Check if next period in same session is identical subject with lessonBlocks[2].min > 0
-              let blockLen = 1;
-              if(ti + 1 < PERIODS_PER_SESSION){
-                const nextCell = arr[ti + 1];
-                const nextSlot = detailsToSlot(thu, buoi, ti + 1);
-                if(nextCell && nextCell !== "OFF" && !this.isCellOff(nextCell) && !this.isCellFixed(nextCell, cid, nextSlot)){
-                  const nextMon = this.extractMon(nextCell);
-                  const nextCanon = this.getCanonMonKey(nextMon);
-                  if(nextCanon === sCanon){
-                    const req = this.classSubjectLessonBlocks ? (
-                      this.classSubjectLessonBlocks.get(`${cid}|${sCanon}|2`) ||
-                      this.classSubjectLessonBlocks.get(`${classCanon}|${sCanon}|2`)
-                    ) : null;
-                    if(req && req.min > 0){
-                      blockLen = 2;
-                    }
-                  }
-                }
-              }
-
-              const act = {
+              const act = this.attachActivityConstraintMeta({
                 id: actCounter++,
                 classId: cid,
                 classCanon,
@@ -2456,18 +3811,68 @@
                 canonKey: sCanon,
                 gv,
                 room: rm,
-                duration: blockLen,
+                duration: 1,
                 isFixed: false,
                 fixedSlot: -1,
                 initSlot: slot,
                 initRaw: cell,
-                initRaw2: blockLen === 2 ? (arr[ti + 1] ?? null) : null,
+                initRaw2: null,
                 nIncompatible: 0
-              };
+              });
               actList.push(act);
-              ti += blockLen;
             }
           });
+        });
+
+        // Also create unplaced activities for any missing PCCM lessons so optimize never loses unplaced lessons
+        const subjectMap = new Map();
+        const checkKeys = Object.keys(data.pccmMatrix || {}).concat(Object.keys(data.pccmTietMatrix || {}));
+        checkKeys.forEach(k => {
+          if(k.startsWith(cid + "|") || k.startsWith(classCanon + "|")){
+            const m = k.split("|").slice(1).join("|")?.trim();
+            if(m){
+              const mKey = this.normalizeMonName(m);
+              if(!subjectMap.has(mKey)){
+                const gv = this.getTeacherForClassMon(lop, m);
+                const room = this.getRoomForClassMon(lop, m);
+                const required = this.getRequiredPeriods(lop, m);
+                const noTeacher = !gv && this.isNoTeacherGhepSubject(lop, m);
+                if(gv || noTeacher){
+                  subjectMap.set(mKey, { mon: m, canonKey: this.getCanonMonKey(m), gv: gv || "", room, required, exactFixed: 0, placed: placedByNorm.get(mKey) || 0, noTeacher });
+                }
+              }
+            }
+          }
+        });
+        for(let slot = 0; slot < TOTAL_SLOTS; slot++){
+          const fix = this.fixedSlots.get(`${cid}|${slot}`);
+          if(fix && fix.mon){
+            const matched = this.resolveFixedSubjectToPccm(subjectMap, fix.mon);
+            if(matched) matched.exactFixed = (matched.exactFixed || 0) + 1;
+          }
+        }
+        subjectMap.forEach(item => {
+          let missing = Math.max(0, item.required - item.exactFixed - item.placed);
+          while(missing > 0){
+            missing--;
+            actList.push(this.attachActivityConstraintMeta({
+              id: actCounter++,
+              classId: cid,
+              classCanon,
+              lop,
+              mon: item.mon,
+              canonKey: item.canonKey,
+              gv: item.gv,
+              room: item.room,
+              duration: 1,
+              isFixed: false,
+              fixedSlot: -1,
+              initSlot: -1,
+              initRaw: null,
+              initRaw2: null,
+              nIncompatible: 0
+            }));
+          }
         });
       });
 
@@ -2475,18 +3880,11 @@
       this.actPlacement = new Array(actList.length).fill(-1);
 
       // 2. Place initial existing activities into their slots.
-      // CÓ KIỂM TRA XUNG ĐỘT (sửa 17/08): trước đây đặt mù quáng — dữ liệu đã
-      // hỏng (2 tiết cùng ô giáo viên) sẽ GHI ĐÈ teacherGrid, làm mọi phép
-      // kiểm tra sau đó mù: unplace tiết sau → ô thành "rảnh" dù tiết trước
-      // vẫn đứng đó → randomSwap đặt lại đúng chỗ trùng. Giờ tiết nào xung đột
-      // với tiết đã vào trước thì để CHƯA PHÂN — repairHardConflicts sẽ tìm chỗ
-      // hợp lệ ngay đầu optimize/optimizeAll.
       this.activities.forEach(act => {
         if(act.initSlot >= 0){
           if(this.canLoadPlacement(act, act.initSlot)){
             this.placeActivityDirect(act.id, act.initSlot);
           }
-          // else: giữ chưa phân — không bao giờ để lưới sai lệch
         }
       });
     }
@@ -2580,7 +3978,7 @@
       }
 
       // 5. If all placed successfully, check if quality improved (Maximum Day Reduction without increasing 1-period sessions or 2-period gaps)
-      if(allPlaced){
+      if(allPlaced && this.isLessonBlockSafe()){
         const currentM = this.evaluateMetrics();
         if(currentM.soBuoiDay1 <= bestMetrics.soBuoiDay1 && currentM.soBuoiTrong2 <= initialMetrics.soBuoiTrong2 && (currentM.tsNgayDay < bestMetrics.tsNgayDay || currentM.tsBuoiDay < bestMetrics.tsBuoiDay)){
           return currentM;
@@ -2595,25 +3993,27 @@
       return null;
     }
 
-    // Recursive LNS Ruin-and-Recreate: Completely vacate a half-day session (Sang/Chieu) for a teacher to reduce total sessions
+    // Recursive LNS Ruin-and-Recreate: Completely vacate a half-day session (Sang/Chieu) for a teacher to reduce total sessions,
+    // or reinforce a singleton session (including fixed singletons) by pulling another lesson of the teacher into it.
     tryVacateTeacherSession(tKey, targetDay, targetBuoi, bestMetrics, initialMetrics, mode = "optimize_sessions"){
       const tGrid = this.teacherGrid.get(tKey);
       if(!tGrid) return null;
 
       const sessionStart = targetDay * SLOTS_PER_DAY + targetBuoi * PERIODS_PER_SESSION;
       const targetActivities = [];
+      let fixedCount = 0;
       for(let p = 0; p < PERIODS_PER_SESSION; p++){
         const slot = sessionStart + p;
         const actId = tGrid[slot];
-        if(actId === -3) return null; // Fixed cell cannot be moved
-        if(actId >= 0){
+        if(actId === -3) fixedCount++;
+        else if(actId >= 0){
           targetActivities.push({ actId, slot });
         }
       }
 
-      if(targetActivities.length === 0 || targetActivities.length > 3) return null;
+      const totalInSession = targetActivities.length + fixedCount;
+      if(totalInSession === 0 || totalInSession > 3) return null;
 
-      // Snapshot complete state
       const snapshotPlacement = this.actPlacement.slice();
       const snapshotClassGrid = new Map();
       this.classGrid.forEach((arr, cid) => snapshotClassGrid.set(cid, arr.slice()));
@@ -2622,53 +4022,143 @@
       const snapshotRoomGrid = new Map();
       this.roomGrid.forEach((arr, rm) => snapshotRoomGrid.set(rm, arr.slice()));
 
-      // 1. Unplace all target activities of this teacher on (targetDay, targetBuoi)
-      for(const item of targetActivities){
-        this.unplaceActivity(item.actId);
-      }
+      const restoreLocalSnap = () => {
+        this.actPlacement = snapshotPlacement.slice();
+        this.classGrid = new Map();
+        snapshotClassGrid.forEach((arr, cid) => this.classGrid.set(cid, arr.slice()));
+        this.teacherGrid = new Map();
+        snapshotTeacherGrid.forEach((arr, gv) => this.teacherGrid.set(gv, arr.slice()));
+        this.roomGrid = new Map();
+        snapshotRoomGrid.forEach((arr, rm) => this.roomGrid.set(rm, arr.slice()));
+      };
 
-      // 2. Temporarily forbid (targetDay, targetBuoi) for teacher tKey
-      const tempForbiddenSlots = [];
-      for(let p = 0; p < PERIODS_PER_SESSION; p++){
-        const slot = sessionStart + p;
-        const key = `${tKey}|${slot}`;
-        if(!this.teacherOffSlots.has(key)){
-          this.teacherOffSlots.add(key);
-          tempForbiddenSlots.push(key);
+      // Part A: LNS Outbound — vacate (targetDay, targetBuoi) into other active sessions of tKey
+      if(fixedCount === 0 && targetActivities.length > 0){
+        const activeSlots = [];
+        for(let d2 = 0; d2 < DAYS_LIST.length; d2++){
+          for(let b2 = 0; b2 < SESSIONS_LIST.length; b2++){
+            if(d2 === targetDay && b2 === targetBuoi) continue;
+            const sStart2 = d2 * SLOTS_PER_DAY + b2 * PERIODS_PER_SESSION;
+            let cnt2 = 0;
+            for(let p2 = 0; p2 < PERIODS_PER_SESSION; p2++){
+              const v = tGrid[sStart2 + p2];
+              if(v >= 0 || v === -3) cnt2++;
+            }
+            if(cnt2 >= 1 && cnt2 + targetActivities.length <= PERIODS_PER_SESSION){
+              for(let p2 = 0; p2 < PERIODS_PER_SESSION; p2++){
+                const s2 = sStart2 + p2;
+                if(tGrid[s2] === -1 && !this.teacherOffSlots.has(`${tKey}|${s2}`)){
+                  activeSlots.push(s2);
+                }
+              }
+            }
+          }
+        }
+
+        if(activeSlots.length >= targetActivities.length){
+          for(const item of targetActivities){
+            this.unplaceActivity(item.actId);
+          }
+
+          const tempForbiddenSlots = [];
+          for(let p = 0; p < PERIODS_PER_SESSION; p++){
+            const slot = sessionStart + p;
+            const key = `${tKey}|${slot}`;
+            if(!this.teacherOffSlots.has(key)){
+              this.teacherOffSlots.add(key);
+              tempForbiddenSlots.push(key);
+            }
+          }
+
+          const savedStrict = this.strictFetGaps;
+          this.strictFetGaps = false;
+          this.tabuMap.clear();
+          this.swappedInBranch.clear();
+          let allPlaced = true;
+          this.limitCalls = (targetActivities.length === 1) ? 800 : 350;
+
+          for(const item of targetActivities){
+            this.nCalls = 0;
+            const ok = this.randomSwap(item.actId, 0, activeSlots);
+            if(!ok){
+              allPlaced = false;
+              break;
+            }
+          }
+
+          this.strictFetGaps = savedStrict;
+          for(const key of tempForbiddenSlots){
+            this.teacherOffSlots.delete(key);
+          }
+
+          if(allPlaced && this.isLessonBlockSafe()){
+            const currentM = this.evaluateMetrics();
+            if(this.compareMetrics(currentM, bestMetrics, mode) < 0){
+              return currentM;
+            }
+          }
+          restoreLocalSnap();
         }
       }
 
-      // 3. Re-place all target activities using recursive randomSwap (LNS)
-      let allPlaced = true;
-      this.limitCalls = 250;
-
-      for(const item of targetActivities){
-        this.nCalls = 0;
-        const ok = this.randomSwap(item.actId, 0);
-        if(!ok){
-          allPlaced = false;
-          break;
+      // Part B: LNS Inbound — if (targetDay, targetBuoi) is a singleton (movable or fixed),
+      // pull a movable lesson of tKey from another singleton session or a >=3-period session into (targetDay, targetBuoi)
+      if(totalInSession === 1){
+        const targetSessionSlots = [];
+        for(let p = 0; p < PERIODS_PER_SESSION; p++){
+          const s = sessionStart + p;
+          if(tGrid[s] === -1 && !this.teacherOffSlots.has(`${tKey}|${s}`)){
+            targetSessionSlots.push(s);
+          }
+        }
+        if(targetSessionSlots.length > 0){
+          const donors = [];
+          for(let d2 = 0; d2 < DAYS_LIST.length; d2++){
+            for(let b2 = 0; b2 < SESSIONS_LIST.length; b2++){
+              if(d2 === targetDay && b2 === targetBuoi) continue;
+              const sStart2 = d2 * SLOTS_PER_DAY + b2 * PERIODS_PER_SESSION;
+              const mov = [];
+              let cnt2 = 0;
+              for(let p2 = 0; p2 < PERIODS_PER_SESSION; p2++){
+                const s2 = sStart2 + p2;
+                const v = tGrid[s2];
+                if(v >= 0 || v === -3) cnt2++;
+                if(v >= 0){
+                  const a2 = this.activities[v];
+                  if(a2 && !a2.isFixed && a2.duration === 1) mov.push({ actId: v, slot: s2, cnt2: 0 });
+                }
+              }
+              if((cnt2 === 1 || cnt2 >= 3) && mov.length > 0){
+                for(const mItem of mov){
+                  mItem.cnt2 = cnt2;
+                  donors.push(mItem);
+                }
+              }
+            }
+          }
+          donors.sort((a, b) => (a.cnt2 === 1 ? 0 : 1) - (b.cnt2 === 1 ? 0 : 1));
+          for(const donor of donors.slice(0, 6)){
+            if(this.opDeadlineMs && Date.now() > this.opDeadlineMs) break;
+            this.unplaceActivity(donor.actId);
+            const savedStrict = this.strictFetGaps;
+            this.strictFetGaps = false;
+            this.tabuMap.clear();
+            this.swappedInBranch.clear();
+            this.limitCalls = 500;
+            this.nCalls = 0;
+            const ok = this.randomSwap(donor.actId, 0, targetSessionSlots);
+            this.strictFetGaps = savedStrict;
+            if(ok && this.isLessonBlockSafe()){
+              const currentM = this.evaluateMetrics();
+              if(this.compareMetrics(currentM, bestMetrics, mode) < 0){
+                return currentM;
+              }
+            }
+            restoreLocalSnap();
+          }
         }
       }
 
-      // 4. Remove temporary forbidden flags
-      for(const key of tempForbiddenSlots){
-        this.teacherOffSlots.delete(key);
-      }
-
-      // 5. If all placed successfully, check if metric improved for the active mode
-      if(allPlaced && this.isLessonBlockSafe()){
-        const currentM = this.evaluateMetrics();
-        if(this.compareMetrics(currentM, bestMetrics, mode) < 0){
-          return currentM;
-        }
-      }
-
-      // Backtrack
-      this.actPlacement = snapshotPlacement;
-      this.classGrid = snapshotClassGrid;
-      this.teacherGrid = snapshotTeacherGrid;
-      this.roomGrid = snapshotRoomGrid;
       return null;
     }
 
@@ -2726,6 +4216,7 @@
 
       for(let pass = 0; pass < maxPasses; pass++){
         if(currentBest.soBuoiDay1 === 0) break;
+        if(this.opDeadlineMs && Date.now() > this.opDeadlineMs) break;
         let passImproved = false;
 
         // 1. Thu thập danh sách singletons thực sự
@@ -2766,6 +4257,7 @@
         if(singletons.length === 0) break;
 
         for(const sing of singletons){
+          if(this.opDeadlineMs && Date.now() > this.opDeadlineMs) break;
           const tKey = sing.teacher;
           const tGrid = this.teacherGrid.get(tKey);
           if(!tGrid) continue;
@@ -2784,18 +4276,20 @@
           let bestCandidate = null;
 
           // -------------------------------------------------------------------
-          // CHIẾN LƯỢC A: MOVE-OUT (Dời tiết lẻ sang buổi khác cùng ca của GV)
+          // CHIẾN LƯỢC A: MOVE-OUT (Dời tiết lẻ sang buổi khác của GV)
           // -------------------------------------------------------------------
           const candidateSessionsA = [];
           for(let d2 = 0; d2 < DAYS; d2++){
-            if(d2 === sing.day) continue;
-            const sStart2 = d2 * SLOTS_PER_DAY + sing.session * PERIODS;
-            let cnt = 0;
-            for(let p2 = 0; p2 < PERIODS; p2++){
-              if(tGrid[sStart2 + p2] >= 0 || tGrid[sStart2 + p2] === -3) cnt++;
-            }
-            if(cnt >= 1 && cnt < 5){
-              candidateSessionsA.push({ d: d2, b: sing.session, sStart: sStart2, count: cnt });
+            for(let b2 = 0; b2 < SESSIONS; b2++){
+              if(d2 === sing.day && b2 === sing.session) continue;
+              const sStart2 = d2 * SLOTS_PER_DAY + b2 * PERIODS;
+              let cnt = 0;
+              for(let p2 = 0; p2 < PERIODS; p2++){
+                if(tGrid[sStart2 + p2] >= 0 || tGrid[sStart2 + p2] === -3) cnt++;
+              }
+              if(cnt >= 1 && cnt < 5){
+                candidateSessionsA.push({ d: d2, b: b2, sStart: sStart2, count: cnt });
+              }
             }
           }
           candidateSessionsA.sort((x, y) => x.count - y.count);
@@ -2848,8 +4342,82 @@
                     this.jrnRollback(jrnMark);
                   }
 
-                  // A2: 3-WAY SAME-CLASS CYCLE (Tam giác hoán đổi 3 bên)
-                  if(!bestCandidate && tGrid2 && (tGrid2[s1] >= 0 || tGrid2[s1] === -3)){
+                  // A1b: 2-PERIOD PAIR SWAP (Hoán đổi cặp 2 tiết liền nhau khi act2 thuộc khối tiết đôi)
+                  if(!bestCandidate && p2 + 1 < PERIODS && tGrid[s2 + 1] < 0 && tGrid[s2 + 1] !== -3){
+                    const act2bId = cGrid1[s2 + 1];
+                    const act2b = act2bId >= 0 ? this.activities[act2bId] : null;
+                    if(act2b && !act2b.isFixed && act2b.duration === 1){
+                      const p1InSess = s1 - sing.sStart;
+                      const adjOffsets = [];
+                      if(p1InSess + 1 < PERIODS) adjOffsets.push(s1 + 1);
+                      if(p1InSess - 1 >= 0) adjOffsets.push(s1 - 1);
+                      for(const s1b of adjOffsets){
+                        const act1bId = cGrid1[s1b];
+                        const act1b = act1bId >= 0 ? this.activities[act1bId] : null;
+                        if(!act1b || act1b.isFixed || act1b.duration !== 1) continue;
+                        const minS1 = Math.min(s1, s1b);
+                        const [srcA, srcB] = s1 < s1b ? [act1, act1b] : [act1b, act1];
+                        const jrnMark = this.moveJournal.length;
+                        this.jrnUnplace(srcA.id);
+                        this.jrnUnplace(srcB.id);
+                        this.jrnUnplace(act2.id);
+                        this.jrnUnplace(act2b.id);
+                        const cA = this.getConflictsForSlot(srcA, s2);
+                        const c2A = this.getConflictsForSlot(act2, minS1);
+                        if(cA.possible && cA.conflicts.length === 0 && c2A.possible && c2A.conflicts.length === 0){
+                          this.jrnPlace(srcA.id, s2);
+                          this.jrnPlace(act2.id, minS1);
+                          const cB = this.getConflictsForSlot(srcB, s2 + 1);
+                          const c2B = this.getConflictsForSlot(act2b, minS1 + 1);
+                          if(cB.possible && cB.conflicts.length === 0 && c2B.possible && c2B.conflicts.length === 0){
+                            this.jrnPlace(srcB.id, s2 + 1);
+                            this.jrnPlace(act2b.id, minS1 + 1);
+                            if(this.isLessonBlockSafe(srcA, srcB, act2, act2b) && this.countStudentHoles() <= maxStudentHolesAllowed){
+                              const candM = this.evaluateMetrics();
+                              const isStrictBetter = (candM.soBuoiDay1 < currentBest.soBuoiDay1) &&
+                                                    (candM.soBuoiTrong2 <= currentBest.soBuoiTrong2) &&
+                                                    (candM.soNgayMotTiet <= currentBest.soNgayMotTiet);
+                              if(isStrictBetter){
+                                if(!bestCandidate || this.compareMetrics(candM, bestCandidate.metrics, "optimize_singletons") < 0){
+                                  bestCandidate = {
+                                    type: '2pair_swap',
+                                    moves: [
+                                      { act: srcA, to: s2 },
+                                      { act: srcB, to: s2 + 1 },
+                                      { act: act2, to: minS1 },
+                                      { act: act2b, to: minS1 + 1 }
+                                    ],
+                                    metrics: { ...candM }
+                                  };
+                                }
+                              }
+                            }
+                          }
+                        }
+                        this.jrnRollback(jrnMark);
+                        if(bestCandidate) break;
+                      }
+                    }
+                  }
+
+                  // A2 & A3: 3-WAY SAME-CLASS CYCLE & 4-WAY EJECTION CHAIN
+                  if(!bestCandidate && tGrid2){
+                    const preMarkA = this.moveJournal.length;
+                    this.jrnUnplace(act1.id);
+                    this.jrnUnplace(act2.id);
+                    const conf1Pre = this.getConflictsForSlot(act1, s2);
+                    const conf1Ok = conf1Pre.possible && conf1Pre.conflicts.length === 0;
+                    this.jrnRollback(preMarkA);
+
+                    const sharesSubjOrGroup = (a, b) => {
+                      if(!a || !b) return false;
+                      if(a.canonKey === b.canonKey || a.ruleSubjKey === b.ruleSubjKey) return true;
+                      if(a.groupIds && b.groupIds && a.groupIds.length && b.groupIds.length){
+                        for(const g of a.groupIds){ if(b.groupIds.includes(g)) return true; }
+                      }
+                      return false;
+                    };
+
                     for(let s3 = 0; s3 < 60; s3++){
                       if(s3 === s1 || s3 === s2) continue;
                       const act3Id = cGrid1[s3];
@@ -2857,6 +4425,7 @@
                       const act3 = this.activities[act3Id];
                       const t3Key = act3 && act3.gv ? act3.gv.toLowerCase() : '';
                       if(!act3 || act3.isFixed || act3.duration !== 1 || !t3Key || t3Key === tKey || t3Key === t2Key) continue;
+                      if(!conf1Ok && !sharesSubjOrGroup(act1, act3)) continue;
                       const tGrid3 = this.teacherGrid.get(t3Key);
                       if(!tGrid3) continue;
 
@@ -2866,9 +4435,9 @@
                         this.jrnUnplace(act2.id);
                         this.jrnUnplace(act3.id);
 
-                        const conf1 = this.getConflictsForSlot(act1, s2);
-                        const conf2 = this.getConflictsForSlot(act2, s3);
-                        const conf3 = this.getConflictsForSlot(act3, s1);
+                        const conf1 = conf1Ok ? conf1Pre : this.getConflictsForSlot(act1, s2);
+                        const conf2 = (conf1.possible && conf1.conflicts.length === 0) ? this.getConflictsForSlot(act2, s3) : { possible: false };
+                        const conf3 = (conf2.possible && conf2.conflicts.length === 0) ? this.getConflictsForSlot(act3, s1) : { possible: false };
 
                         if(conf1.possible && conf1.conflicts.length === 0 &&
                            conf2.possible && conf2.conflicts.length === 0 &&
@@ -2900,93 +4469,105 @@
                         this.jrnRollback(jrnMark);
                       }
                     }
-                  }
 
-                  // A3: 4-WAY EJECTION CHAIN (Pruned & Fast - Chỉ quét các slot RẢNH của GV)
-                  if(!bestCandidate && tGrid2 && (tGrid2[s1] >= 0 || tGrid2[s1] === -3)){
-                    // Thu thập các slot mà tGrid2 RẢNH trong cùng ca
-                    const freeSlots2 = [];
-                    for(let p3 = 0; p3 < PERIODS_PER_SESSION; p3++){
-                      for(let d3 = 0; d3 < DAYS_LIST.length; d3++){
-                        const candS3 = d3 * SLOTS_PER_DAY + sing.session * PERIODS_PER_SESSION + p3;
-                        if(candS3 !== s1 && candS3 !== s2 && tGrid2[candS3] < 0 && tGrid2[candS3] !== -3){
-                          if(cGrid1[candS3] >= 0) freeSlots2.push(candS3);
-                        }
-                      }
-                    }
-
-                    for(const s3 of freeSlots2){
-                      const act3Id = cGrid1[s3];
-                      const act3 = this.activities[act3Id];
-                      const t3Key = act3 && act3.gv ? act3.gv.toLowerCase() : '';
-                      if(!act3 || act3.isFixed || act3.duration !== 1 || !t3Key || t3Key === tKey || t3Key === t2Key) continue;
-                      const tGrid3 = this.teacherGrid.get(t3Key);
-                      if(!tGrid3) continue;
-
-                      // Thu thập các slot mà tGrid3 RẢNH và tGrid4 RẢNH tại s1
-                      const freeSlots3 = [];
-                      for(let p4 = 0; p4 < PERIODS_PER_SESSION; p4++){
-                        for(let d4 = 0; d4 < DAYS_LIST.length; d4++){
-                          const candS4 = d4 * SLOTS_PER_DAY + sing.session * PERIODS_PER_SESSION + p4;
-                          if(candS4 !== s1 && candS4 !== s2 && candS4 !== s3 && tGrid3[candS4] < 0 && tGrid3[candS4] !== -3){
-                            if(cGrid1[candS4] >= 0) freeSlots3.push(candS4);
+                    // A3: 4-WAY EJECTION CHAIN (Pruned & Fast - Chỉ quét các slot RẢNH của GV)
+                    if(!bestCandidate){
+                      const freeSlots2 = [];
+                      for(let p3 = 0; p3 < PERIODS_PER_SESSION; p3++){
+                        for(let d3 = 0; d3 < DAYS_LIST.length; d3++){
+                          const candS3 = d3 * SLOTS_PER_DAY + sing.session * PERIODS_PER_SESSION + p3;
+                          if(candS3 !== s1 && candS3 !== s2 && tGrid2[candS3] < 0 && tGrid2[candS3] !== -3){
+                            if(cGrid1[candS3] >= 0) freeSlots2.push(candS3);
                           }
                         }
                       }
 
-                      for(const s4 of freeSlots3){
-                        const act4Id = cGrid1[s4];
-                        const act4 = this.activities[act4Id];
-                        const t4Key = act4 && act4.gv ? act4.gv.toLowerCase() : '';
-                        if(!act4 || act4.isFixed || act4.duration !== 1 || !t4Key || t4Key === tKey || t4Key === t2Key || t4Key === t3Key) continue;
-                        const tGrid4 = this.teacherGrid.get(t4Key);
-                        if(!tGrid4 || tGrid4[s1] >= 0 || tGrid4[s1] === -3) continue;
+                      for(const s3 of freeSlots2){
+                        const act3Id = cGrid1[s3];
+                        const act3 = this.activities[act3Id];
+                        const t3Key = act3 && act3.gv ? act3.gv.toLowerCase() : '';
+                        if(!act3 || act3.isFixed || act3.duration !== 1 || !t3Key || t3Key === tKey || t3Key === t2Key) continue;
+                        const tGrid3 = this.teacherGrid.get(t3Key);
+                        if(!tGrid3) continue;
 
-                        const jrnMark = this.moveJournal.length;
+                        const preMark3 = this.moveJournal.length;
                         this.jrnUnplace(act1.id);
                         this.jrnUnplace(act2.id);
                         this.jrnUnplace(act3.id);
-                        this.jrnUnplace(act4.id);
+                        const conf1At3 = conf1Ok ? conf1Pre : this.getConflictsForSlot(act1, s2);
+                        const conf1At3Ok = conf1At3.possible && conf1At3.conflicts.length === 0;
+                        const conf2Pre = this.getConflictsForSlot(act2, s3);
+                        const conf2Ok = conf2Pre.possible && conf2Pre.conflicts.length === 0;
+                        this.jrnRollback(preMark3);
 
-                        const conf1 = this.getConflictsForSlot(act1, s2);
-                        const conf2 = this.getConflictsForSlot(act2, s3);
-                        const conf3 = this.getConflictsForSlot(act3, s4);
-                        const conf4 = this.getConflictsForSlot(act4, s1);
-
-                        if(conf1.possible && conf1.conflicts.length === 0 &&
-                           conf2.possible && conf2.conflicts.length === 0 &&
-                           conf3.possible && conf3.conflicts.length === 0 &&
-                           conf4.possible && conf4.conflicts.length === 0){
-                          this.jrnPlace(act1.id, s2);
-                          this.jrnPlace(act2.id, s3);
-                          this.jrnPlace(act3.id, s4);
-                          this.jrnPlace(act4.id, s1);
-
-                          if(this.isLessonBlockSafe(act1, act2, act3, act4) && this.countStudentHoles() <= maxStudentHolesAllowed){
-                            const candM = this.evaluateMetrics();
-                            const isStrictBetter = (candM.soBuoiDay1 < currentBest.soBuoiDay1) &&
-                                                  (candM.soBuoiTrong2 <= currentBest.soBuoiTrong2) &&
-                                                  (candM.soNgayMotTiet <= currentBest.soNgayMotTiet);
-                            if(isStrictBetter){
-                              if(!bestCandidate || this.compareMetrics(candM, bestCandidate.metrics, "optimize_singletons") < 0){
-                                bestCandidate = {
-                                  type: '4way_chain',
-                                  moves: [
-                                    { act: act1, to: s2 },
-                                    { act: act2, to: s3 },
-                                    { act: act3, to: s4 },
-                                    { act: act4, to: s1 }
-                                  ],
-                                  metrics: { ...candM }
-                                };
-                              }
+                        const freeSlots3 = [];
+                        for(let p4 = 0; p4 < PERIODS_PER_SESSION; p4++){
+                          for(let d4 = 0; d4 < DAYS_LIST.length; d4++){
+                            const candS4 = d4 * SLOTS_PER_DAY + sing.session * PERIODS_PER_SESSION + p4;
+                            if(candS4 !== s1 && candS4 !== s2 && candS4 !== s3 && tGrid3[candS4] < 0 && tGrid3[candS4] !== -3){
+                              if(cGrid1[candS4] >= 0) freeSlots3.push(candS4);
                             }
                           }
                         }
-                        this.jrnRollback(jrnMark);
+
+                        for(const s4 of freeSlots3){
+                          const act4Id = cGrid1[s4];
+                          const act4 = this.activities[act4Id];
+                          const t4Key = act4 && act4.gv ? act4.gv.toLowerCase() : '';
+                          if(!act4 || act4.isFixed || act4.duration !== 1 || !t4Key || t4Key === tKey || t4Key === t2Key || t4Key === t3Key) continue;
+                          if(!conf1At3Ok && !sharesSubjOrGroup(act1, act4)) continue;
+                          if(!conf2Ok && !sharesSubjOrGroup(act2, act4)) continue;
+                          const tGrid4 = this.teacherGrid.get(t4Key);
+                          if(!tGrid4 || tGrid4[s1] >= 0 || tGrid4[s1] === -3) continue;
+
+                          const jrnMark = this.moveJournal.length;
+                          this.jrnUnplace(act1.id);
+                          this.jrnUnplace(act2.id);
+                          this.jrnUnplace(act3.id);
+                          this.jrnUnplace(act4.id);
+
+                          const conf1 = conf1At3Ok ? conf1At3 : this.getConflictsForSlot(act1, s2);
+                          const conf2 = (conf1.possible && conf1.conflicts.length === 0)
+                            ? (conf2Ok ? conf2Pre : this.getConflictsForSlot(act2, s3))
+                            : { possible: false };
+                          const conf3 = (conf2.possible && conf2.conflicts.length === 0) ? this.getConflictsForSlot(act3, s4) : { possible: false };
+                          const conf4 = (conf3.possible && conf3.conflicts.length === 0) ? this.getConflictsForSlot(act4, s1) : { possible: false };
+
+                          if(conf1.possible && conf1.conflicts.length === 0 &&
+                             conf2.possible && conf2.conflicts.length === 0 &&
+                             conf3.possible && conf3.conflicts.length === 0 &&
+                             conf4.possible && conf4.conflicts.length === 0){
+                            this.jrnPlace(act1.id, s2);
+                            this.jrnPlace(act2.id, s3);
+                            this.jrnPlace(act3.id, s4);
+                            this.jrnPlace(act4.id, s1);
+
+                            if(this.isLessonBlockSafe(act1, act2, act3, act4) && this.countStudentHoles() <= maxStudentHolesAllowed){
+                              const candM = this.evaluateMetrics();
+                              const isStrictBetter = (candM.soBuoiDay1 < currentBest.soBuoiDay1) &&
+                                                    (candM.soBuoiTrong2 <= currentBest.soBuoiTrong2) &&
+                                                    (candM.soNgayMotTiet <= currentBest.soNgayMotTiet);
+                              if(isStrictBetter){
+                                if(!bestCandidate || this.compareMetrics(candM, bestCandidate.metrics, "optimize_singletons") < 0){
+                                  bestCandidate = {
+                                    type: '4way_chain',
+                                    moves: [
+                                      { act: act1, to: s2 },
+                                      { act: act2, to: s3 },
+                                      { act: act3, to: s4 },
+                                      { act: act4, to: s1 }
+                                    ],
+                                    metrics: { ...candM }
+                                  };
+                                }
+                              }
+                            }
+                          }
+                          this.jrnRollback(jrnMark);
+                          if(bestCandidate) break;
+                        }
                         if(bestCandidate) break;
                       }
-                      if(bestCandidate) break;
                     }
                   }
                 }
@@ -3028,8 +4609,6 @@
             for(let d2 = 0; d2 < DAYS; d2++){
               for(let b2 = 0; b2 < SESSIONS; b2++){
                 if(d2 === sing.day && b2 === sing.session) continue;
-                // Chỉ lấy buổi cùng ca (hoặc buổi nhiều tiết)
-                if(b2 !== sing.session) continue;
 
                 const sStartRich = d2 * SLOTS_PER_DAY + b2 * PERIODS;
                 const richActs = [];
@@ -3042,7 +4621,7 @@
                     }
                   }
                 }
-                if(richActs.length >= 3){
+                if(richActs.length >= 2){
                   for(const donor of richActs){
                     const actDonor = donor.act;
                     const sDonor = donor.slot;
@@ -3096,8 +4675,24 @@
                             this.jrnRollback(jrnMark);
                           }
 
-                          // B2: 3-WAY CYCLE PULL-IN (actDonor -> sTgt, actOcc -> s3, act3 -> sDonor)
-                          if(!bestCandidate && tGridOcc && (tGridOcc[sDonor] >= 0 || tGridOcc[sDonor] === -3)){
+                          // B2 & B3: 3-WAY CYCLE & 4-WAY EJECTION CHAIN PULL-IN
+                          if(!bestCandidate && tGridOcc){
+                            const preMarkB = this.moveJournal.length;
+                            this.jrnUnplace(actDonor.id);
+                            this.jrnUnplace(actOcc.id);
+                            const confDPre = this.getConflictsForSlot(actDonor, sTgt);
+                            const confDOk = confDPre.possible && confDPre.conflicts.length === 0;
+                            this.jrnRollback(preMarkB);
+
+                            const sharesSubjOrGroupB = (a, b) => {
+                              if(!a || !b) return false;
+                              if(a.canonKey === b.canonKey || a.ruleSubjKey === b.ruleSubjKey) return true;
+                              if(a.groupIds && b.groupIds && a.groupIds.length && b.groupIds.length){
+                                for(const g of a.groupIds){ if(b.groupIds.includes(g)) return true; }
+                              }
+                              return false;
+                            };
+
                             const freeSlotsOcc = [];
                             for(let p3 = 0; p3 < PERIODS; p3++){
                               for(let d3 = 0; d3 < DAYS; d3++){
@@ -3113,6 +4708,7 @@
                               const act3 = this.activities[act3Id];
                               const t3Key = act3 && act3.gv ? act3.gv.toLowerCase() : '';
                               if(!act3 || act3.isFixed || act3.duration !== 1 || !t3Key || t3Key === tKey || t3Key === tOccKey) continue;
+                              if(!confDOk && !sharesSubjOrGroupB(actDonor, act3)) continue;
                               const tGrid3 = this.teacherGrid.get(t3Key);
                               if(!tGrid3 || tGrid3[sDonor] >= 0 || tGrid3[sDonor] === -3) continue;
 
@@ -3121,9 +4717,9 @@
                               this.jrnUnplace(actOcc.id);
                               this.jrnUnplace(act3.id);
 
-                              const confD = this.getConflictsForSlot(actDonor, sTgt);
-                              const confO = this.getConflictsForSlot(actOcc, s3);
-                              const conf3 = this.getConflictsForSlot(act3, sDonor);
+                              const confD = confDOk ? confDPre : this.getConflictsForSlot(actDonor, sTgt);
+                              const confO = (confD.possible && confD.conflicts.length === 0) ? this.getConflictsForSlot(actOcc, s3) : { possible: false };
+                              const conf3 = (confO.possible && confO.conflicts.length === 0) ? this.getConflictsForSlot(act3, sDonor) : { possible: false };
 
                               if(confD.possible && confD.conflicts.length === 0 &&
                                  confO.possible && confO.conflicts.length === 0 &&
@@ -3155,91 +4751,95 @@
                               this.jrnRollback(jrnMark);
                               if(bestCandidate) break;
                             }
-                          }
 
-                          // B3: 4-WAY EJECTION CHAIN PULL-IN (actDonor -> sTgt, actOcc -> s3, act3 -> s4, act4 -> sDonor)
-                          if(!bestCandidate && tGridOcc && (tGridOcc[sDonor] >= 0 || tGridOcc[sDonor] === -3)){
-                            const freeSlotsOcc = [];
-                            for(let p3 = 0; p3 < PERIODS; p3++){
-                              for(let d3 = 0; d3 < DAYS; d3++){
-                                const candS3 = d3 * SLOTS_PER_DAY + sing.session * PERIODS + p3;
-                                if(candS3 !== sTgt && candS3 !== sDonor && tGridOcc[candS3] < 0 && tGridOcc[candS3] !== -3){
-                                  if(cGridDonor[candS3] >= 0) freeSlotsOcc.push(candS3);
-                                }
-                              }
-                            }
+                            // B3: 4-WAY EJECTION CHAIN PULL-IN (actDonor -> sTgt, actOcc -> s3, act3 -> s4, act4 -> sDonor)
+                            if(!bestCandidate){
+                              for(const s3 of freeSlotsOcc){
+                                const act3Id = cGridDonor[s3];
+                                const act3 = this.activities[act3Id];
+                                const t3Key = act3 && act3.gv ? act3.gv.toLowerCase() : '';
+                                if(!act3 || act3.isFixed || act3.duration !== 1 || !t3Key || t3Key === tKey || t3Key === tOccKey) continue;
+                                const tGrid3 = this.teacherGrid.get(t3Key);
+                                if(!tGrid3) continue;
 
-                            for(const s3 of freeSlotsOcc){
-                              const act3Id = cGridDonor[s3];
-                              const act3 = this.activities[act3Id];
-                              const t3Key = act3 && act3.gv ? act3.gv.toLowerCase() : '';
-                              if(!act3 || act3.isFixed || act3.duration !== 1 || !t3Key || t3Key === tKey || t3Key === tOccKey) continue;
-                              const tGrid3 = this.teacherGrid.get(t3Key);
-                              if(!tGrid3) continue;
-
-                              const freeSlots3 = [];
-                              for(let p4 = 0; p4 < PERIODS; p4++){
-                                for(let d4 = 0; d4 < DAYS; d4++){
-                                  const candS4 = d4 * SLOTS_PER_DAY + sing.session * PERIODS + p4;
-                                  if(candS4 !== sTgt && candS4 !== sDonor && candS4 !== s3 && tGrid3[candS4] < 0 && tGrid3[candS4] !== -3){
-                                    if(cGridDonor[candS4] >= 0) freeSlots3.push(candS4);
-                                  }
-                                }
-                              }
-
-                              for(const s4 of freeSlots3){
-                                const act4Id = cGridDonor[s4];
-                                const act4 = this.activities[act4Id];
-                                const t4Key = act4 && act4.gv ? act4.gv.toLowerCase() : '';
-                                if(!act4 || act4.isFixed || act4.duration !== 1 || !t4Key || t4Key === tKey || t4Key === tOccKey || t4Key === t3Key) continue;
-                                const tGrid4 = this.teacherGrid.get(t4Key);
-                                if(!tGrid4 || tGrid4[sDonor] >= 0 || tGrid4[sDonor] === -3) continue;
-
-                                const jrnMark = this.moveJournal.length;
+                                const preMarkB3 = this.moveJournal.length;
                                 this.jrnUnplace(actDonor.id);
                                 this.jrnUnplace(actOcc.id);
                                 this.jrnUnplace(act3.id);
-                                this.jrnUnplace(act4.id);
+                                const confDAt3 = confDOk ? confDPre : this.getConflictsForSlot(actDonor, sTgt);
+                                const confDAt3Ok = confDAt3.possible && confDAt3.conflicts.length === 0;
+                                const confOPre = this.getConflictsForSlot(actOcc, s3);
+                                const confOOk = confOPre.possible && confOPre.conflicts.length === 0;
+                                this.jrnRollback(preMarkB3);
 
-                                const confD = this.getConflictsForSlot(actDonor, sTgt);
-                                const confO = this.getConflictsForSlot(actOcc, s3);
-                                const conf3 = this.getConflictsForSlot(act3, s4);
-                                const conf4 = this.getConflictsForSlot(act4, sDonor);
-
-                                if(confD.possible && confD.conflicts.length === 0 &&
-                                   confO.possible && confO.conflicts.length === 0 &&
-                                   conf3.possible && conf3.conflicts.length === 0 &&
-                                   conf4.possible && conf4.conflicts.length === 0){
-                                  this.jrnPlace(actDonor.id, sTgt);
-                                  this.jrnPlace(actOcc.id, s3);
-                                  this.jrnPlace(act3.id, s4);
-                                  this.jrnPlace(act4.id, sDonor);
-
-                                  if(this.isLessonBlockSafe(actDonor, actOcc, act3, act4) && this.countStudentHoles() <= maxStudentHolesAllowed){
-                                    const candM = this.evaluateMetrics();
-                                    const isStrictBetter = (candM.soBuoiDay1 < currentBest.soBuoiDay1) &&
-                                                          (candM.soBuoiTrong2 <= currentBest.soBuoiTrong2) &&
-                                                          (candM.soNgayMotTiet <= currentBest.soNgayMotTiet);
-                                    if(isStrictBetter){
-                                      if(!bestCandidate || this.compareMetrics(candM, bestCandidate.metrics, "optimize_singletons") < 0){
-                                        bestCandidate = {
-                                          type: 'pull_in_4way',
-                                          moves: [
-                                            { act: actDonor, to: sTgt },
-                                            { act: actOcc, to: s3 },
-                                            { act: act3, to: s4 },
-                                            { act: act4, to: sDonor }
-                                          ],
-                                          metrics: { ...candM }
-                                        };
-                                      }
+                                const freeSlots3 = [];
+                                for(let p4 = 0; p4 < PERIODS; p4++){
+                                  for(let d4 = 0; d4 < DAYS; d4++){
+                                    const candS4 = d4 * SLOTS_PER_DAY + sing.session * PERIODS + p4;
+                                    if(candS4 !== sTgt && candS4 !== sDonor && candS4 !== s3 && tGrid3[candS4] < 0 && tGrid3[candS4] !== -3){
+                                      if(cGridDonor[candS4] >= 0) freeSlots3.push(candS4);
                                     }
                                   }
                                 }
-                                this.jrnRollback(jrnMark);
+
+                                for(const s4 of freeSlots3){
+                                  const act4Id = cGridDonor[s4];
+                                  const act4 = this.activities[act4Id];
+                                  const t4Key = act4 && act4.gv ? act4.gv.toLowerCase() : '';
+                                  if(!act4 || act4.isFixed || act4.duration !== 1 || !t4Key || t4Key === tKey || t4Key === tOccKey || t4Key === t3Key) continue;
+                                  if(!confDAt3Ok && !sharesSubjOrGroupB(actDonor, act4)) continue;
+                                  if(!confOOk && !sharesSubjOrGroupB(actOcc, act4)) continue;
+                                  const tGrid4 = this.teacherGrid.get(t4Key);
+                                  if(!tGrid4 || tGrid4[sDonor] >= 0 || tGrid4[sDonor] === -3) continue;
+
+                                  const jrnMark = this.moveJournal.length;
+                                  this.jrnUnplace(actDonor.id);
+                                  this.jrnUnplace(actOcc.id);
+                                  this.jrnUnplace(act3.id);
+                                  this.jrnUnplace(act4.id);
+
+                                  const confD = confDAt3Ok ? confDAt3 : this.getConflictsForSlot(actDonor, sTgt);
+                                  const confO = (confD.possible && confD.conflicts.length === 0)
+                                    ? (confOOk ? confOPre : this.getConflictsForSlot(actOcc, s3))
+                                    : { possible: false };
+                                  const conf3 = (confO.possible && confO.conflicts.length === 0) ? this.getConflictsForSlot(act3, s4) : { possible: false };
+                                  const conf4 = (conf3.possible && conf3.conflicts.length === 0) ? this.getConflictsForSlot(act4, sDonor) : { possible: false };
+
+                                  if(confD.possible && confD.conflicts.length === 0 &&
+                                     confO.possible && confO.conflicts.length === 0 &&
+                                     conf3.possible && conf3.conflicts.length === 0 &&
+                                     conf4.possible && conf4.conflicts.length === 0){
+                                    this.jrnPlace(actDonor.id, sTgt);
+                                    this.jrnPlace(actOcc.id, s3);
+                                    this.jrnPlace(act3.id, s4);
+                                    this.jrnPlace(act4.id, sDonor);
+
+                                    if(this.isLessonBlockSafe(actDonor, actOcc, act3, act4) && this.countStudentHoles() <= maxStudentHolesAllowed){
+                                      const candM = this.evaluateMetrics();
+                                      const isStrictBetter = (candM.soBuoiDay1 < currentBest.soBuoiDay1) &&
+                                                            (candM.soBuoiTrong2 <= currentBest.soBuoiTrong2) &&
+                                                            (candM.soNgayMotTiet <= currentBest.soNgayMotTiet);
+                                      if(isStrictBetter){
+                                        if(!bestCandidate || this.compareMetrics(candM, bestCandidate.metrics, "optimize_singletons") < 0){
+                                          bestCandidate = {
+                                            type: 'pull_in_4way',
+                                            moves: [
+                                              { act: actDonor, to: sTgt },
+                                              { act: actOcc, to: s3 },
+                                              { act: act3, to: s4 },
+                                              { act: act4, to: sDonor }
+                                            ],
+                                            metrics: { ...candM }
+                                          };
+                                        }
+                                      }
+                                    }
+                                  }
+                                  this.jrnRollback(jrnMark);
+                                  if(bestCandidate) break;
+                                }
                                 if(bestCandidate) break;
                               }
-                              if(bestCandidate) break;
                             }
                           }
                         }
@@ -3642,12 +5242,14 @@
 
       for(let pass = 0; pass < maxPasses; pass++){
         if(currentBest.soBuoiDay1 === 0) break;
+        if(this.opDeadlineMs && Date.now() > this.opDeadlineMs) break;
         let passImproved = false;
 
         const teacherList = Array.from(this.teacherGrid.keys()).filter(t => t && this.isScoredTeacher(t));
         this.rng.shuffle(teacherList);
 
         for(const tKey of teacherList){
+          if(this.opDeadlineMs && Date.now() > this.opDeadlineMs) break;
           const tGrid = this.teacherGrid.get(tKey);
           if(!tGrid) continue;
 
@@ -3811,6 +5413,7 @@
         this.rng.shuffle(teacherList);
 
         for(const tKey of teacherList){
+          if(this.opDeadlineMs && Date.now() > this.opDeadlineMs) break;
           const tGrid = this.teacherGrid.get(tKey);
           if(!tGrid) continue;
 
@@ -3876,25 +5479,30 @@
 
                   this.jrnUnplace(act1.id);
                   this.jrnUnplace(act2.id);
-                  this.jrnPlace(act1.id, s2);
-                  this.jrnPlace(act2.id, s1);
+                  const r1 = this.getConflictsForSlot(act1, s2);
+                  const r2 = this.getConflictsForSlot(act2, s1);
+                  if(r1.possible && r1.conflicts.length === 0 && r2.possible && r2.conflicts.length === 0){
+                    this.jrnPlace(act1.id, s2);
+                    this.jrnPlace(act2.id, s1);
 
-                  const candM = this.evaluateMetrics();
-                  const isBetter = (candM.soBuoiTrong2 <= currentBest.soBuoiTrong2) &&
-                    (candM.soBuoiDay1 < currentBest.soBuoiDay1 || (candM.soBuoiDay1 === currentBest.soBuoiDay1 && candM.soBuoiTrong2 < currentBest.soBuoiTrong2));
+                    if(this.isLessonBlockSafe(act1, act2)){
+                      const candM = this.evaluateMetrics();
+                      const isBetter = (candM.soBuoiTrong2 <= currentBest.soBuoiTrong2) &&
+                        (candM.soBuoiDay1 < currentBest.soBuoiDay1 || (candM.soBuoiDay1 === currentBest.soBuoiDay1 && candM.soBuoiTrong2 < currentBest.soBuoiTrong2));
 
-                  if(isBetter){
-                    currentBest = candM;
-                    passImproved = true;
-                    anyImproved = true;
-                    if(typeof onProgress === "function") onProgress(currentBest);
-                    break;
-                  }else{
+                      if(isBetter){
+                        currentBest = candM;
+                        passImproved = true;
+                        anyImproved = true;
+                        if(typeof onProgress === "function") onProgress(currentBest);
+                        break;
+                      }
+                    }
                     this.jrnUnplace(act1.id);
                     this.jrnUnplace(act2.id);
-                    this.jrnPlace(act1.id, s1);
-                    this.jrnPlace(act2.id, s2);
                   }
+                  this.jrnPlace(act1.id, s1);
+                  this.jrnPlace(act2.id, s2);
                 }
                 if(passImproved) break;
               }
@@ -3923,6 +5531,7 @@
         this.rng.shuffle(teacherList);
 
         for(const tKey of teacherList){
+          if(this.opDeadlineMs && Date.now() > this.opDeadlineMs) break;
           const tGrid = this.teacherGrid.get(tKey);
           if(!tGrid) continue;
 
@@ -4008,28 +5617,36 @@
                       this.jrnUnplace(act1.id);
                       this.jrnUnplace(act2.id);
                       this.jrnUnplace(act3.id);
-                      this.jrnPlace(act1.id, s2);
-                      this.jrnPlace(act2.id, s3);
-                      this.jrnPlace(act3.id, s1);
-                      const candM = this.evaluateMetrics();
+                      const r1 = this.getConflictsForSlot(act1, s2);
+                      const r2 = this.getConflictsForSlot(act2, s3);
+                      const r3 = this.getConflictsForSlot(act3, s1);
+                      if(r1.possible && r1.conflicts.length === 0 &&
+                         r2.possible && r2.conflicts.length === 0 &&
+                         r3.possible && r3.conflicts.length === 0){
+                        this.jrnPlace(act1.id, s2);
+                        this.jrnPlace(act2.id, s3);
+                        this.jrnPlace(act3.id, s1);
 
-                      const isBetter = (candM.soBuoiTrong2 <= currentBest.soBuoiTrong2) &&
-                        (candM.soBuoiDay1 < currentBest.soBuoiDay1 || (candM.soBuoiDay1 === currentBest.soBuoiDay1 && candM.soBuoiTrong2 < currentBest.soBuoiTrong2));
+                        if(this.isLessonBlockSafe(act1, act2, act3)){
+                          const candM = this.evaluateMetrics();
+                          const isBetter = (candM.soBuoiTrong2 <= currentBest.soBuoiTrong2) &&
+                            (candM.soBuoiDay1 < currentBest.soBuoiDay1 || (candM.soBuoiDay1 === currentBest.soBuoiDay1 && candM.soBuoiTrong2 < currentBest.soBuoiTrong2));
 
-                      if(isBetter){
-                        currentBest = candM;
-                        passImproved = true;
-                        anyImproved = true;
-                        if(typeof onProgress === "function") onProgress(currentBest);
-                        break;
-                      }else{
+                          if(isBetter){
+                            currentBest = candM;
+                            passImproved = true;
+                            anyImproved = true;
+                            if(typeof onProgress === "function") onProgress(currentBest);
+                            break;
+                          }
+                        }
                         this.jrnUnplace(act1.id);
                         this.jrnUnplace(act2.id);
                         this.jrnUnplace(act3.id);
-                        this.jrnPlace(act1.id, s1);
-                        this.jrnPlace(act2.id, s2);
-                        this.jrnPlace(act3.id, s3);
                       }
+                      this.jrnPlace(act1.id, s1);
+                      this.jrnPlace(act2.id, s2);
+                      this.jrnPlace(act3.id, s3);
                     }
                     if(passImproved) break;
                   }
@@ -4046,15 +5663,16 @@
       return anyImproved ? currentBest : null;
     }
 
-    obliterateAllThinTeacherSessions(maxPasses = 8, targetSizes = [1, 2], maxGap2Limit = 0, onProgress = null){
+    obliterateAllThinTeacherSessions(maxPasses = 8, targetSizes = [1, 2], maxGap2Limit = 0, onProgress = null, mode = "optimize_sessions"){
       let currentBest = this.evaluateMetrics();
       let anyImproved = false;
 
       for(let pass = 0; pass < maxPasses; pass++){
+        if(this.opDeadlineMs && Date.now() > this.opDeadlineMs) break;
         let passImproved = false;
         const thinSessions = [];
         this.teacherGrid.forEach((tGrid, tKey) => {
-          if(!tKey) return;
+          if(!tKey || !this.isScoredTeacher(tKey)) return;
           for(let d = 0; d < DAYS_LIST.length; d++){
             for(let b = 0; b < SESSIONS_LIST.length; b++){
               const sStart = d * SLOTS_PER_DAY + b * PERIODS_PER_SESSION;
@@ -4072,9 +5690,10 @@
         this.rng.shuffle(thinSessions);
         thinSessions.sort((x, y) => x.cnt - y.cnt);
 
-        for(const s of thinSessions.slice(0, 30)){
-          const res = this.tryVacateTeacherSession(s.tKey, s.d, s.b, currentBest, currentBest);
-          if(res && this.compareMetrics(res, currentBest, "optimize_sessions") < 0){
+        for(const s of thinSessions.slice(0, 40)){
+          if(this.opDeadlineMs && Date.now() > this.opDeadlineMs) break;
+          const res = this.tryVacateTeacherSession(s.tKey, s.d, s.b, currentBest, currentBest, mode);
+          if(res && this.compareMetrics(res, currentBest, mode) < 0){
             currentBest = { ...res };
             anyImproved = true;
             passImproved = true;
@@ -8090,9 +9709,8 @@
       // Baseline lo trong hoc sinh (13.3): nghiem chi duoc GIU hoac GIAM, khong duoc tang.
       this.__studentHoleBaseline = this.countStudentHoles();
       // 13.5: theo thu tu uu tien da chot, "trong tiet" chi la muc tieu hang 2/4 —
-      // KHONG lam rang buoc cung chan muc tieu so 1. Stage singletons: tha luat gap cung
-      // (diem phat van giu); T2/T1 phat sinh do stage gap2/gap1 don voi buoi-le DA KHOA.
-      this.strictFetGaps = (mode !== "optimize_singletons");
+      // KHONG lam rang buoc cung chan muc tieu so 1.
+      this.strictFetGaps = false;
       const initialMetrics = this.evaluateMetrics();
       // singletonSlack: cho phép "mượn tạm" N suất 1-tiết/buổi trong lúc tìm
       // đường (đi qua thung lũng mà gate tham lam không bước nổi). Người gọi
@@ -8235,9 +9853,11 @@
         });
       }
 
-      const MAX_ROUNDS = (mode === "optimize_singletons") ? 65 : ((mode === "optimize_gap2") ? 28 : 55);
+      const MAX_ROUNDS = this.__inOptimizeAll ? 18 : ((mode === "optimize_singletons") ? 65 : ((mode === "optimize_gap2") ? 28 : 55));
       let consecutiveUnimprovedRounds = 0;
-      const maxStagnantRounds = (mode === "optimize_singletons") ? 25 : ((mode === "optimize_gap2") ? 8 : 18);
+      const maxStagnantRounds = this.__inOptimizeAll
+        ? ((mode === "optimize_singletons") ? 4 : 3)
+        : ((mode === "optimize_singletons") ? 25 : ((mode === "optimize_gap2") ? 8 : 18));
       let destroyStrength = 1;
       let round = 0;
 
@@ -8286,7 +9906,7 @@
             improvedInRound = true;
             destroyStrength = 1;
           }
-          if(bestMetrics.soBuoiDay1 <= 1){
+          if(bestMetrics.soBuoiDay1 === 0){
             portfolioDone = true;
             break;
           }
@@ -8311,6 +9931,14 @@
           const oblitM = this.obliterateAllTeacherSingletons(12, 0, notifyLiveProgress);
           if(oblitM && this.compareMetrics(oblitM, bestMetrics, mode) < 0){
             bestMetrics = { ...oblitM };
+            saveBestSnapshot();
+            improvedInRound = true;
+            destroyStrength = 1;
+          }
+
+          const oblitThin1 = this.obliterateAllThinTeacherSessions(8, [1], 0, notifyLiveProgress, mode);
+          if(oblitThin1 && this.compareMetrics(oblitThin1, bestMetrics, mode) < 0){
+            bestMetrics = { ...oblitThin1 };
             saveBestSnapshot();
             improvedInRound = true;
             destroyStrength = 1;
@@ -8766,7 +10394,7 @@
           });
         }
 
-                if((mode === "optimize_singletons" && bestMetrics.soBuoiDay1 <= 1) || getMetricVal(bestMetrics) === 0){
+        if(getMetricVal(bestMetrics) === 0){
           portfolioDone = true;
           break;
         }
@@ -8778,7 +10406,7 @@
 
             // Quyết định restart: kết thúc tức thì khi đã đạt mục tiêu hoặc hội tụ
       const globalVal = this.__globalBestM ? getMetricVal(this.__globalBestM) : getMetricVal(bestMetrics);
-      const isTargetAchieved = (mode === "optimize_singletons" && globalVal <= 1) || (globalVal === 0);
+      const isTargetAchieved = (globalVal === 0);
 
       if(!isTargetAchieved && canRestart && globalVal > restartTargetVal && restartCount < maxRestarts &&
          (Date.now() - optStartMs) < Math.min(restartBudgetMs, hardCapMs) &&
@@ -9019,6 +10647,17 @@
           }
         }
       }
+      // Nhấc hết vi phạm vật lý trước, sau đó kiểm tra tiếp các ràng buộc RB (tkbConstraints)
+      for(const id of offenders) this.unplaceActivity(id);
+      for(let id = 0; id < this.activities.length; id++){
+        const act = this.activities[id];
+        if(!act || act.isFixed || this.actPlacement[id] < 0) continue;
+        if(!this.isActivityConstraintSafe(act)){
+          offenders.add(id);
+          this.unplaceActivity(id);
+        }
+      }
+
       // Tiết CHƯA PHÂN cũng phải xử lý ở đây: một tiết trùng lịch bị loader bỏ
       // qua sẽ nằm ở "chưa phân" — và chỉ MỘT tiết chưa phân đã làm integrity
       // gate từ chối mọi nước đi của optimizer (tê liệt toàn bộ nút Tối ưu).
@@ -9028,8 +10667,6 @@
       }
       if(!offenders.size && !unplaced.length) return { repaired: 0, unresolved: 0 };
 
-      // Nhấc hết vi phạm trước (giải phóng chỗ), rồi đặt lại từng tiết.
-      for(const id of offenders) this.unplaceActivity(id);
       let repaired = 0, unresolved = 0;
       const savedCalls = this.limitCalls;
       const toPlace = Array.from(offenders).concat(unplaced.filter(id => !offenders.has(id)));
@@ -9264,6 +10901,13 @@
       if(typeof this.__studentHoleBaseline === "number" && this.countStudentHoles() > this.__studentHoleBaseline){
         return false;
       }
+      if(!this.isLessonBlockSafe()) return false;
+      for(let id = 0; id < this.activities.length; id++){
+        const act = this.activities[id];
+        if(act && !act.isFixed && this.actPlacement[id] >= 0){
+          if(!this.isActivityConstraintSafe(act)) return false;
+        }
+      }
       return true;
     }
 
@@ -9331,7 +10975,7 @@
         if(stopRequested()) break;
         const ph = PHASES[si];
         const remainMs = deadline - Date.now();
-        if(remainMs < 5_000) break;
+        if(remainMs < 1_500) break;
 
         // Stage da dat 0 san thi chi can KHOA roi di tiep.
         if(ph.lockKey && Number(bestMetrics[ph.lockKey]) === 0){
@@ -9342,14 +10986,15 @@
 
         const sliceMs = ph.mode === "optimize_gap1"
           ? remainMs
-          : Math.max(10_000, Math.min(remainMs, Math.floor(totalBudgetMs * ph.share)));
+          : Math.max(3_000, Math.min(remainMs, Math.floor(totalBudgetMs * ph.share)));
+        const stageSliceDeadline = Date.now() + sliceMs;
 
-        // Toi da 3 lat cho stage: dung ngay khi cham 0 hoac lat khong cai thien.
-        for(let latIdx = 0; latIdx < 3; latIdx++){
+        // Toi da 2 lat cho stage: dung ngay khi cham 0 hoac lat khong cai thien.
+        for(let latIdx = 0; latIdx < 2; latIdx++){
           if(stopRequested()) break;
           if(ph.lockKey && Number(bestMetrics[ph.lockKey]) === 0) break;
-          const latRemain = Math.min(deadline - Date.now(), Math.floor(sliceMs / (latIdx === 0 ? 1 : 2)));
-          if(latRemain < 4_000) break;
+          const latRemain = Math.min(deadline - Date.now(), stageSliceDeadline - Date.now());
+          if(latRemain < 1_200) break;
           const before = { ...bestMetrics };
           this.stageDeadlineMs = Date.now() + latRemain;
           this.pushToZero = true;

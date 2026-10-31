@@ -3,13 +3,84 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cherry Scheduler — Đăng nhập</title>
+  <title>Cherry Scheduler | School Timetable Optimization</title>
+  <meta name="description" content="Cherry Scheduler is a Vietnamese EdTech startup building intelligent school timetable optimization software for schools." />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://tkbcherry.com/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Cherry Scheduler" />
+  <meta property="og:title" content="Cherry Scheduler | School Timetable Optimization" />
+  <meta property="og:description" content="Cherry Scheduler is a Vietnamese EdTech startup building intelligent school timetable optimization software for schools." />
+  <meta property="og:url" content="https://tkbcherry.com/" />
+  <meta property="og:image" content="https://tkbcherry.com/assets/cherry-scheduler-logo.png" />
+  <meta name="twitter:card" content="summary" />
   <link rel="icon" type="image/png" href="assets/favicon-cherry.png?v=2" />
   <meta name="theme-color" content="#ffffff" />
   <link rel="stylesheet" href="tokens.css?v=20260710-light-v1" />
   <link rel="stylesheet" href="auth.css?v=20260820-portal-info-v1" />
   <link rel="stylesheet" href="theme-light.css?v=20260710-premium-ui-v2" />
   <link rel="stylesheet" href="runtime.css?v=20260710-runtime-v1" />
+  <link rel="stylesheet" href="public-site.css?v=20261007-public-v1" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://tkbcherry.com/#organization",
+        "name": "Cherry Software",
+        "alternateName": "Cherry Scheduler",
+        "url": "https://tkbcherry.com/",
+        "logo": "https://tkbcherry.com/assets/cherry-scheduler-logo.png",
+        "email": "contact@tkbcherry.com",
+        "description": "Cherry Software is a Vietnamese EdTech startup building Cherry Scheduler, intelligent school timetable optimization software for schools.",
+        "foundingDate": "2025-12",
+        "founder": {
+          "@type": "Person",
+          "name": "Nguyen Hoang An",
+          "alternateName": "Nguyễn Hoàng Ân",
+          "jobTitle": "Founder & CEO",
+          "email": "an@tkbcherry.com",
+          "sameAs": "https://www.linkedin.com/in/an-nguyen-1b4133442/"
+        },
+        "foundingLocation": {
+          "@type": "Place",
+          "name": "Ho Chi Minh City, Vietnam"
+        },
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Ho Chi Minh City",
+          "addressCountry": "VN"
+        },
+        "contactPoint": {
+          "@type": "ContactPoint",
+          "contactType": "customer support",
+          "email": "contact@tkbcherry.com",
+          "availableLanguage": ["Vietnamese", "English"]
+        },
+        "knowsAbout": ["School timetable optimization", "Constraint-based scheduling", "Education technology"]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://tkbcherry.com/#website",
+        "url": "https://tkbcherry.com/",
+        "name": "Cherry Scheduler",
+        "inLanguage": ["vi", "en"],
+        "publisher": { "@id": "https://tkbcherry.com/#organization" }
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://tkbcherry.com/#software",
+        "name": "Cherry Scheduler",
+        "url": "https://tkbcherry.com/",
+        "applicationCategory": "EducationalApplication",
+        "operatingSystem": "Web browser",
+        "description": "School timetable optimization software that generates and improves timetables for teachers and classes while handling teacher availability, class conflicts, subject requirements, workloads and school-specific constraints.",
+        "publisher": { "@id": "https://tkbcherry.com/#organization" }
+      }
+    ]
+  }
+  </script>
   <script src="shared/school-context.js?v=20260708-v1"></script>
   <script src="shared/auth-api.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
   <script src="shared/auth.js?v=20260904-grant-1year-v1"></script>
@@ -17,7 +88,23 @@
   <script defer src="shared/password-toggle.js?v=20260708-v1"></script>
   <script defer src="auth.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
 </head>
-<body class="auth-body auth-home">
+<body class="auth-body auth-home auth-landing">
+  <header class="lp-nav">
+    <div class="lp-nav-inner">
+      <a class="lp-brand" href="/">
+        <img src="assets/cherry-scheduler-logo.png?v=2" width="30" height="30" alt="" />
+        <span>Cherry Scheduler</span>
+      </a>
+      <nav class="lp-nav-links" aria-label="Main">
+        <a href="#product">Product</a>
+        <a href="#about">About</a>
+        <a href="#technology">Technology</a>
+        <a href="#contact">Contact</a>
+      </nav>
+      <a class="lp-nav-cta" href="#authCard">Đăng nhập</a>
+    </div>
+  </header>
+
   <main class="auth-shell" id="authApp">
     <div class="auth-bg" aria-hidden="true">
       <div class="auth-orb auth-orb-a"></div>
@@ -25,79 +112,25 @@
       <div class="auth-grid"></div>
     </div>
 
-    <section class="auth-panel auth-panel-brand">
+    <section class="auth-panel auth-panel-brand" aria-labelledby="heroTitle">
       <div class="auth-brand-inner">
         <div class="auth-brand-copy">
-          <img class="auth-logo-img" src="assets/cherry-scheduler-logo.png?v=2" width="128" height="128" alt="Cherry Scheduler" />
+          <img class="auth-logo-img" src="assets/cherry-scheduler-logo.png?v=2" width="128" height="128" alt="Cherry Scheduler logo" />
           <h1>Cherry Scheduler</h1>
+          <h2 class="lp-hero-title" id="heroTitle" lang="en">Intelligent School Timetable Optimization</h2>
+          <p class="lp-hero-sub" lang="en">Cherry Scheduler is a Vietnamese EdTech platform that helps schools create and optimize complex timetables while handling teacher availability, class conflicts, subject requirements, workloads, and school-specific scheduling constraints.</p>
           <p class="auth-brand-tagline">Xếp nhanh, chuẩn xác – Nhàn hơn mỗi ngày.</p>
+          <div class="lp-cta-row">
+            <a class="lp-btn lp-btn-primary" href="#authCard">Get Started · Đăng nhập</a>
+            <a class="lp-btn lp-btn-ghost" href="/about">About Cherry Scheduler</a>
+          </div>
+          <ul class="lp-facts-inline" lang="en" aria-label="Company facts">
+            <li>Vietnamese EdTech startup</li>
+            <li>Founded December 2025</li>
+            <li>Ho Chi Minh City, Vietnam</li>
+            <li>Contact: <a href="mailto:contact@tkbcherry.com" style="color:inherit">contact@tkbcherry.com</a></li>
+          </ul>
         </div>
-        <figure class="auth-brand-visual" aria-label="Minh họa thời khóa biểu Cherry Scheduler">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 340" fill="none" aria-hidden="true">
-            <defs>
-              <linearGradient id="tkbHeroCardBg" x1="40" y1="20" x2="480" y2="320" gradientUnits="userSpaceOnUse">
-                <stop offset="0" stop-color="#1e3a8a" stop-opacity="0.55"/>
-                <stop offset="1" stop-color="#581c87" stop-opacity="0.35"/>
-              </linearGradient>
-              <linearGradient id="tkbHeroAccent" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stop-color="#2563eb"/>
-                <stop offset="1" stop-color="#7c3aed"/>
-              </linearGradient>
-              <linearGradient id="tkbHeroShine" x1="80" y1="0" x2="420" y2="300" gradientUnits="userSpaceOnUse">
-                <stop offset="0" stop-color="#ffffff" stop-opacity="0.14"/>
-                <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
-              </linearGradient>
-              <filter id="tkbHeroGlow" x="-30%" y="-30%" width="160%" height="160%">
-                <feGaussianBlur stdDeviation="18" result="blur"/>
-                <feMerge>
-                  <feMergeNode in="blur"/>
-                  <feMergeNode in="SourceGraphic"/>
-                </feMerge>
-              </filter>
-            </defs>
-            <ellipse cx="260" cy="300" rx="190" ry="24" fill="#0f172a" opacity="0.55"/>
-            <g filter="url(#tkbHeroGlow)">
-              <rect x="72" y="42" width="376" height="252" rx="28" fill="url(#tkbHeroCardBg)" stroke="rgba(255,255,255,0.12)" stroke-width="1.5"/>
-              <rect x="72" y="42" width="376" height="252" rx="28" fill="url(#tkbHeroShine)"/>
-            </g>
-            <rect x="98" y="68" width="324" height="200" rx="18" fill="rgba(15,23,42,0.72)" stroke="rgba(255,255,255,0.08)"/>
-            <rect x="118" y="88" width="72" height="28" rx="8" fill="url(#tkbHeroAccent)" opacity="0.95"/>
-            <text x="154" y="107" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="13" font-weight="700">TKB Pro</text>
-            <g stroke="rgba(148,163,184,0.22)" stroke-width="1.2">
-              <line x1="118" y1="132" x2="402" y2="132"/>
-              <line x1="118" y1="162" x2="402" y2="162"/>
-              <line x1="118" y1="192" x2="402" y2="192"/>
-              <line x1="118" y1="222" x2="402" y2="222"/>
-              <line x1="178" y1="124" x2="178" y2="248"/>
-              <line x1="238" y1="124" x2="238" y2="248"/>
-              <line x1="298" y1="124" x2="298" y2="248"/>
-              <line x1="358" y1="124" x2="358" y2="248"/>
-            </g>
-            <rect x="124" y="138" width="46" height="18" rx="5" fill="#2563eb" opacity="0.9"/>
-            <rect x="184" y="138" width="46" height="18" rx="5" fill="#22d3ee" opacity="0.85"/>
-            <rect x="244" y="138" width="46" height="18" rx="5" fill="#a78bfa" opacity="0.9"/>
-            <rect x="304" y="138" width="46" height="18" rx="5" fill="#34d399" opacity="0.88"/>
-            <rect x="124" y="168" width="46" height="18" rx="5" fill="#f59e0b" opacity="0.88"/>
-            <rect x="184" y="168" width="46" height="18" rx="5" fill="#2563eb" opacity="0.75"/>
-            <rect x="304" y="168" width="46" height="18" rx="5" fill="#22d3ee" opacity="0.8"/>
-            <rect x="184" y="198" width="46" height="18" rx="5" fill="#34d399" opacity="0.85"/>
-            <rect x="244" y="198" width="46" height="18" rx="5" fill="#f59e0b" opacity="0.85"/>
-            <rect x="364" y="198" width="30" height="18" rx="5" fill="#a78bfa" opacity="0.8"/>
-            <rect x="124" y="228" width="46" height="14" rx="4" fill="#64748b" opacity="0.45"/>
-            <rect x="244" y="228" width="46" height="14" rx="4" fill="#64748b" opacity="0.45"/>
-            <circle cx="404" cy="92" r="22" fill="rgba(34,211,238,0.16)" stroke="rgba(34,211,238,0.45)" stroke-width="1.5"/>
-            <path d="M396 92l6 6 12-14" stroke="#22d3ee" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-            <g opacity="0.9">
-              <rect x="88" y="24" width="54" height="54" rx="16" fill="url(#tkbHeroAccent)"/>
-              <path d="M104 18v12M126 18v12" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/>
-              <rect x="98" y="34" width="34" height="28" rx="6" fill="rgba(255,255,255,0.95)"/>
-              <path d="M98 44h34M110 34v28M120 34v28" stroke="#dbeafe" stroke-width="1.5"/>
-              <rect x="101" y="48" width="6" height="6" rx="1.5" fill="#2563eb"/>
-              <rect x="113" y="48" width="6" height="6" rx="1.5" fill="#f59e0b"/>
-              <rect x="125" y="48" width="6" height="6" rx="1.5" fill="#14b8a6"/>
-            </g>
-          </svg>
-        </figure>
       </div>
     </section>
 
@@ -181,11 +214,233 @@
     </section>
   </main>
 
-  <footer class="auth-site-footer auth-site-footer--compact">
-    <div class="auth-site-footer-inner">
-      <span>Bản quyền <strong>Cherry Scheduler</strong></span>
-      <span>Địa chỉ: 424, đường Nhuận Đức, xã Nhuận Đức, TP.HCM</span>
-      <span><a href="tel:+84352261815">0352261815</a> · <a href="https://zalo.me/0352261815" target="_blank" rel="noopener">Zalo</a></span>
+  <section class="lp-section" id="product" aria-labelledby="productTitle" lang="en">
+    <div class="lp-container">
+      <div class="lp-split">
+        <div>
+          <p class="lp-eyebrow">What we build</p>
+          <h2 class="lp-h2" id="productTitle">Built for complex school scheduling</h2>
+          <p class="lp-lead">Cherry Scheduler helps schools automatically generate and optimize timetables for teachers and classes.</p>
+          <p class="lp-lead">The platform is designed to handle real-world scheduling constraints such as teacher availability, subject requirements, class conflicts, teaching workloads, session limits, and school-specific scheduling rules.</p>
+          <p class="lp-lead">Our scheduling engine focuses on producing feasible timetables while reducing unnecessary teacher sessions, timetable gaps, and manual scheduling effort.</p>
+          <div class="lp-vi" lang="vi">
+            <strong>Tiếng Việt</strong>
+            <p>Cherry Scheduler giúp nhà trường tự động xếp và tối ưu thời khóa biểu cho giáo viên và lớp học.</p>
+            <p>Nền tảng được thiết kế để xử lý các ràng buộc thực tế như lịch rảnh của giáo viên, yêu cầu môn học, trùng lịch giữa các lớp, định mức tiết dạy, giới hạn buổi dạy và các quy định riêng của từng trường.</p>
+            <p>Bộ máy xếp lịch tập trung tạo ra thời khóa biểu khả thi, đồng thời giảm số buổi dạy không cần thiết của giáo viên, tiết trống và công sức xếp tay.</p>
+          </div>
+        </div>
+        <figure class="lp-visual" aria-label="Minh họa thời khóa biểu Cherry Scheduler">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 340" fill="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="tkbHeroCardBg" x1="40" y1="20" x2="480" y2="320" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="#1e3a8a" stop-opacity="0.55"/>
+                <stop offset="1" stop-color="#581c87" stop-opacity="0.35"/>
+              </linearGradient>
+              <linearGradient id="tkbHeroAccent" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#2563eb"/>
+                <stop offset="1" stop-color="#7c3aed"/>
+              </linearGradient>
+              <linearGradient id="tkbHeroShine" x1="80" y1="0" x2="420" y2="300" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="#ffffff" stop-opacity="0.14"/>
+                <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+              </linearGradient>
+              <filter id="tkbHeroGlow" x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur stdDeviation="18" result="blur"/>
+                <feMerge>
+                  <feMergeNode in="blur"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+            </defs>
+            <ellipse cx="260" cy="300" rx="190" ry="24" fill="#0f172a" opacity="0.55"/>
+            <g filter="url(#tkbHeroGlow)">
+              <rect x="72" y="42" width="376" height="252" rx="28" fill="url(#tkbHeroCardBg)" stroke="rgba(255,255,255,0.12)" stroke-width="1.5"/>
+              <rect x="72" y="42" width="376" height="252" rx="28" fill="url(#tkbHeroShine)"/>
+            </g>
+            <rect x="98" y="68" width="324" height="200" rx="18" fill="rgba(15,23,42,0.72)" stroke="rgba(255,255,255,0.08)"/>
+            <rect x="118" y="88" width="72" height="28" rx="8" fill="url(#tkbHeroAccent)" opacity="0.95"/>
+            <text x="154" y="107" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="13" font-weight="700">TKB Pro</text>
+            <g stroke="rgba(148,163,184,0.22)" stroke-width="1.2">
+              <line x1="118" y1="132" x2="402" y2="132"/>
+              <line x1="118" y1="162" x2="402" y2="162"/>
+              <line x1="118" y1="192" x2="402" y2="192"/>
+              <line x1="118" y1="222" x2="402" y2="222"/>
+              <line x1="178" y1="124" x2="178" y2="248"/>
+              <line x1="238" y1="124" x2="238" y2="248"/>
+              <line x1="298" y1="124" x2="298" y2="248"/>
+              <line x1="358" y1="124" x2="358" y2="248"/>
+            </g>
+            <rect x="124" y="138" width="46" height="18" rx="5" fill="#2563eb" opacity="0.9"/>
+            <rect x="184" y="138" width="46" height="18" rx="5" fill="#22d3ee" opacity="0.85"/>
+            <rect x="244" y="138" width="46" height="18" rx="5" fill="#a78bfa" opacity="0.9"/>
+            <rect x="304" y="138" width="46" height="18" rx="5" fill="#34d399" opacity="0.88"/>
+            <rect x="124" y="168" width="46" height="18" rx="5" fill="#f59e0b" opacity="0.88"/>
+            <rect x="184" y="168" width="46" height="18" rx="5" fill="#2563eb" opacity="0.75"/>
+            <rect x="304" y="168" width="46" height="18" rx="5" fill="#22d3ee" opacity="0.8"/>
+            <rect x="184" y="198" width="46" height="18" rx="5" fill="#34d399" opacity="0.85"/>
+            <rect x="244" y="198" width="46" height="18" rx="5" fill="#f59e0b" opacity="0.85"/>
+            <rect x="364" y="198" width="30" height="18" rx="5" fill="#a78bfa" opacity="0.8"/>
+            <rect x="124" y="228" width="46" height="14" rx="4" fill="#64748b" opacity="0.45"/>
+            <rect x="244" y="228" width="46" height="14" rx="4" fill="#64748b" opacity="0.45"/>
+            <circle cx="404" cy="92" r="22" fill="rgba(34,211,238,0.16)" stroke="rgba(34,211,238,0.45)" stroke-width="1.5"/>
+            <path d="M396 92l6 6 12-14" stroke="#22d3ee" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            <g opacity="0.9">
+              <rect x="88" y="24" width="54" height="54" rx="16" fill="url(#tkbHeroAccent)"/>
+              <path d="M104 18v12M126 18v12" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/>
+              <rect x="98" y="34" width="34" height="28" rx="6" fill="rgba(255,255,255,0.95)"/>
+              <path d="M98 44h34M110 34v28M120 34v28" stroke="#dbeafe" stroke-width="1.5"/>
+              <rect x="101" y="48" width="6" height="6" rx="1.5" fill="#2563eb"/>
+              <rect x="113" y="48" width="6" height="6" rx="1.5" fill="#f59e0b"/>
+              <rect x="125" y="48" width="6" height="6" rx="1.5" fill="#14b8a6"/>
+            </g>
+          </svg>
+        </figure>
+      </div>
+
+      <ul class="lp-cards" aria-label="Scheduling constraints Cherry Scheduler handles">
+        <li class="lp-card">
+          <span class="lp-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg></span>
+          <h3>Teacher availability</h3>
+          <p>Days off, unavailable periods and per-day session limits for each teacher.</p>
+        </li>
+        <li class="lp-card">
+          <span class="lp-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 10h18M8 2v4M16 2v4M9.5 14.5l5 5M14.5 14.5l-5 5"/></svg></span>
+          <h3>Class conflicts</h3>
+          <p>No class, teacher or room is double-booked, and fixed lessons stay where the school placed them.</p>
+        </li>
+        <li class="lp-card">
+          <span class="lp-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg></span>
+          <h3>Subject requirements</h3>
+          <p>Weekly lesson counts, double periods and per-session limits for every subject.</p>
+        </li>
+        <li class="lp-card">
+          <span class="lp-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span>
+          <h3>Teaching workloads</h3>
+          <p>Teacher–class assignments, including lessons that several classes attend together.</p>
+        </li>
+        <li class="lp-card">
+          <span class="lp-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+          <h3>Sessions and gaps</h3>
+          <p>Fewer single-lesson sessions, fewer idle gaps and fewer teaching sessions per teacher.</p>
+        </li>
+        <li class="lp-card">
+          <span class="lp-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></span>
+          <h3>School-specific rules</h3>
+          <p>Multiple campuses, rooms, travel between locations and other rules set by each school.</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="lp-section lp-section--alt" id="about" aria-labelledby="aboutTitle" lang="en">
+    <div class="lp-container">
+      <div class="lp-split lp-split--top">
+        <div>
+          <p class="lp-eyebrow">Company</p>
+          <h2 class="lp-h2" id="aboutTitle">About Cherry Scheduler</h2>
+          <p class="lp-lead">Cherry Scheduler is built by Cherry Software, an early-stage Vietnamese EdTech startup focused on school timetable optimization and intelligent scheduling tools.</p>
+          <p class="lp-lead">We build software that reduces the complexity and manual effort involved in creating timetables for teachers and classes.</p>
+          <a class="lp-link-more" href="/about">Read more about Cherry Scheduler →</a>
+        </div>
+        <dl class="lp-facts">
+          <dt>Company</dt>
+          <dd>Cherry Software</dd>
+          <dt>Product</dt>
+          <dd>Cherry Scheduler</dd>
+          <dt>Founded</dt>
+          <dd>December 2025</dd>
+          <dt>Founder</dt>
+          <dd>Nguyen Hoang An <span lang="vi">(Nguyễn Hoàng Ân)</span>, Founder &amp; CEO · <a href="https://www.linkedin.com/in/an-nguyen-1b4133442/" target="_blank" rel="noopener">LinkedIn</a> · <a href="mailto:an@tkbcherry.com">an@tkbcherry.com</a></dd>
+          <dt>Location</dt>
+          <dd>Ho Chi Minh City, Vietnam</dd>
+          <dt>Stage</dt>
+          <dd>Bootstrapped / Early-stage</dd>
+          <dt>Website</dt>
+          <dd><a href="https://tkbcherry.com">https://tkbcherry.com</a></dd>
+          <dt>Contact</dt>
+          <dd><a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a></dd>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-section" id="technology" aria-labelledby="techTitle" lang="en">
+    <div class="lp-container">
+      <p class="lp-eyebrow">Technology</p>
+      <h2 class="lp-h2" id="techTitle">Optimization-first scheduling</h2>
+      <p class="lp-lead">Cherry Scheduler combines constraint-based scheduling and optimization techniques to solve complex school timetable problems.</p>
+      <p class="lp-lead">The scheduling engine evaluates teacher, class, subject, workload and session constraints to generate feasible schedules and improve timetable quality.</p>
+      <p class="lp-lead">In production today: a Rust backend, a Python OR-Tools CP-SAT solver running on Google Cloud Run, and a drag-and-drop web planner. Verified on a school of 75 classes, 125 teachers and about 2,200 lessons per week.</p>
+
+      <ol class="lp-steps" aria-label="How Cherry Scheduler works">
+        <li>
+          <h3>Enter school data</h3>
+          <p>Classes, teachers, subjects and teaching assignments for the school year.</p>
+        </li>
+        <li>
+          <h3>Set the rules</h3>
+          <p>Teacher availability, subject requirements, session limits and school-specific rules.</p>
+        </li>
+        <li>
+          <h3>Generate and optimize</h3>
+          <p>The engine builds a feasible timetable, then improves sessions and gaps without breaking any rule.</p>
+        </li>
+        <li>
+          <h3>Review and export</h3>
+          <p>Adjust lessons by drag and drop, then export timetables to Excel or Word.</p>
+        </li>
+      </ol>
+
+      <div class="lp-note">
+        <span class="lp-badge">How we build</span>
+        <p>Cherry Scheduler is developed by a solo founder working with Claude Code, Anthropic's AI coding assistant, to build, test and ship the product and to prepare each school's data from its raw spreadsheets.</p>
+      </div>
+      <div class="lp-note">
+        <span class="lp-badge">Exploring</span>
+        <p>Next, we are exploring Claude-powered onboarding inside the product: importing school spreadsheets, turning teachers' written requests into scheduling constraints, and explaining in plain language why a timetable is infeasible. These AI features are not part of the product yet.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-section lp-section--alt" id="contact" aria-labelledby="contactTitle">
+    <div class="lp-container">
+      <p class="lp-eyebrow" lang="en">Contact</p>
+      <h2 class="lp-h2" id="contactTitle" lang="en">Get in touch</h2>
+      <div class="lp-contact">
+        <div class="lp-contact-card">
+          <h3>Cherry Scheduler</h3>
+          <address lang="en">Ho Chi Minh City, Vietnam</address>
+          <span class="lp-contact-label" lang="en">Email</span>
+          <a class="lp-email" href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a>
+          <span class="lp-contact-label" lang="en">Website</span>
+          <a href="https://tkbcherry.com">https://tkbcherry.com</a>
+        </div>
+        <div class="lp-contact-card">
+          <h3 lang="vi">Hỗ trợ nhà trường</h3>
+          <p class="lp-contact-secondary" lang="vi">Nhà trường muốn dùng thử hoặc cần hỗ trợ xếp thời khóa biểu, vui lòng gửi email tới <a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a>.</p>
+          <p class="lp-contact-secondary" lang="vi">Điện thoại / Zalo: <a href="tel:+84352261815">0352261815</a> · <a href="https://zalo.me/0352261815" target="_blank" rel="noopener">Zalo</a></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="lp-footer">
+    <div class="lp-container lp-footer-inner">
+      <div class="lp-footer-brand">
+        <strong>Cherry Scheduler</strong>
+        <span lang="en">School timetable optimization · Ho Chi Minh City, Vietnam</span>
+      </div>
+      <nav class="lp-footer-links" aria-label="Company">
+        <a href="/about">About</a>
+        <a href="/privacy">Privacy Policy</a>
+        <a href="/terms">Terms of Service</a>
+      </nav>
+      <div class="lp-footer-bottom">
+        <p>© 2026 Cherry Scheduler</p>
+        <p class="lp-footer-contact">Contact: <a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a></p>
+        <p>Địa chỉ: 424, đường Nhuận Đức, xã Nhuận Đức, TP.HCM · <a href="tel:+84352261815">0352261815</a> · <a href="https://zalo.me/0352261815" target="_blank" rel="noopener">Zalo</a></p>
+      </div>
     </div>
   </footer>
 </body>

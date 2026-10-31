@@ -98,6 +98,7 @@ function loadTeacherSchedule(data){
     getLopCanonById(id){ const l = data.lop.find(x => x.id === id); return l ? l.ten : String(id); },
     cellMon(v){ if(v === "OFF" || v == null || v === "") return ""; return typeof v === "string" ? v : String(v.mon || ""); },
     isFixed(v){ return !!(v && typeof v === "object" && v.fixed); },
+    isShownFixed(v){ return !!(v && typeof v === "object" && v.fixed) && !v.jointPin; },
     getTeacherForClassMon(lop, mon){ return data.pccmMatrix[`${lop}|${mon}`] || ""; },
     getRoomForClassMon(){ return ""; },
     teacherValueHas(raw, code){ return splitTeachers(raw).includes(String(code).toLowerCase()); }

@@ -46,6 +46,7 @@ class State:
         "a_placed",
         "check_fail_reason",
         "defer_min",
+        "t_ais",
     )
 
     def __init__(self, problem: Problem, defer_min: bool = False):
@@ -71,6 +72,23 @@ class State:
         self.a_placed = [0] * problem.num_assignments()
         self.check_fail_reason = ""
         self.defer_min = defer_min
+        # 05/10: phan cong cua tung GV (luat so buoi toi thieu chi xet khi GV du tiet)
+        self.t_ais = [[] for _ in range(T)]
+        for ai, members in enumerate(problem.a_teachers):
+            for t in members:
+                if 0 <= t < T:
+                    self.t_ais[t].append(ai)
+        # 05/10: o GV ban co dinh vi tiet chung nhieu lop (P.teacher_fixed_busy):
+        # danh dau chiem cho san (phan cong tong hop, khoa) de trung gio, thong ke
+        # buoi, luat GV va dia diem tinh dung nhu giao dien.
+        for t, busy in enumerate(getattr(problem, "teacher_fixed_busy", None) or ()):
+            if t >= T or not busy:
+                continue
+            row = self.teacher_slot[t]
+            for slot, ai in busy.items():
+                row[slot] = ai
+            for s in {slot // PERIODS for slot in busy}:
+                self._refresh_ts(t, s)
 
     # ------------------------------------------------------------------
     # objective
@@ -117,6 +135,13 @@ class State:
                 if len(entries) >= 2 and location_rule_debt(entries, one, gap, move, breaks) > 0:
                     total += 1
         return total
+
+    def teacher_complete(self, t: int) -> bool:
+        """05/10: moi phan cong cua GV t da xep du so tiet."""
+
+        P = self.P
+        a_placed = self.a_placed
+        return all(a_placed[ai] >= P.a_periods[ai] for ai in self.t_ais[t])
 
     def _session_contrib(self, t: int, s: int) -> tuple[int, int, int, int]:
         count = self.ts_count[t][s]
@@ -301,7 +326,7 @@ class State:
                     if len(entries) >= 2 and location_rule_debt(entries, one, gap, move, breaks) > 0:
                         self.check_fail_reason = "teacher_location"
                         return False
-        if rule.max_days > 0 or rule.max_sessions > 0 or rule.max_morning > 0 or rule.max_afternoon > 0:
+        if rule.max_days > 0 or rule.max_sessions > 0 or rule.max_morning > 0 or rule.max_afternoon > 0 or rule.min_sessions > 0:
             used_days = 0
             used_sessions = 0
             used_am = 0
@@ -322,6 +347,15 @@ class State:
                 return False
             if rule.max_sessions > 0 and used_sessions > rule.max_sessions:
                 self.check_fail_reason = "teacher_max_sessions"
+                return False
+            # 05/10: so buoi toi thieu ("dung bang") — chi khi GV da du tiet
+            if (
+                rule.min_sessions > 0
+                and not self.defer_min
+                and used_sessions < rule.min_sessions
+                and self.teacher_complete(t)
+            ):
+                self.check_fail_reason = "teacher_min_sessions"
                 return False
             if rule.max_morning > 0 and used_am > rule.max_morning:
                 self.check_fail_reason = "teacher_max_morning"
@@ -474,10 +508,10 @@ class State:
                 return None
         if not journal:
             return journal
-        if check and not self._check_scopes(journal):
-            self._rollback(journal)
-            return None
         # refresh teacher-session stats for touched (t, s)
+        # 05/10: lam TRUOC khi kiem luat — _check_teacher doc ts_count (che do
+        # buoi, tran tiet/buoi, so buoi toi da/toi thieu); truoc day bo dem con la
+        # cua luoi CU nen luat theo buoi bi kiem tre mot buoc.
         touched_ts: set[tuple[int, int]] = set()
         for c, slot, old, new in journal:
             s = slot // PERIODS
@@ -489,6 +523,11 @@ class State:
                     touched_ts.add((t, s))
         for t, s in touched_ts:
             self._refresh_ts(t, s)
+        if check and not self._check_scopes(journal):
+            self._rollback(journal)
+            for t, s in touched_ts:
+                self._refresh_ts(t, s)
+            return None
         return journal
 
     def undo(self, journal: list) -> None:

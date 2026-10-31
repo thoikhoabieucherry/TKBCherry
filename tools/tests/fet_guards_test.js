@@ -64,12 +64,21 @@ async function run(){
 
   // 2. Gioi han 2: van phai giu cap tiet doi
   {
-    const e = new Engine(baseData({limit: 2}), {solveBudgetMs: 8000});
+    const data = baseData({limit: 2});
+    const e = new Engine(data, {solveBudgetMs: 8000});
     const res = await e.solve(null);
     check("gioi han 2: xep du 3 tiet", res.placed === 3 && res.unassigned === 0, res);
-    check("gioi han 2: giu cap tiet doi",
-      e.activities.some(a => a.duration === 2),
-      e.activities.map(a => a.duration));
+    // 30/10 (FET V3): cap doi co the la 1 hoat dong dai 2 tiet HOAC 2 tiet le dat lien nhau
+    // (luat lessonBlocks ap luc xep) -> kiem KET QUA tren luoi: co 2 tiet lien nhau trong mot buoi.
+    const runs = [];
+    for(const d of DAYS){
+      let run = 0;
+      for(const cell of data.tkb.L1[d].sang){
+        if(cell && cell !== "OFF"){ run += 1; }else{ if(run) runs.push(run); run = 0; }
+      }
+      if(run) runs.push(run);
+    }
+    check("gioi han 2: giu cap tiet doi", runs.includes(2), runs);
     check("gioi han 2: khong bao mau thuan",
       (res.blockLimitConflicts || []).length === 0,
       res.blockLimitConflicts);

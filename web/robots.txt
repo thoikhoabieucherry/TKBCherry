@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+Allow: /about
+Allow: /privacy
+Allow: /terms
+Disallow: /api/
+Disallow: /app
+Disallow: /app.html
+Disallow: /school-portal
+Disallow: /super-admin
+Disallow: /pages/
+Disallow: /downloads/
+Disallow: /e2e/
+
+Sitemap: https://tkbcherry.com/sitemap.xml

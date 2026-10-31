@@ -34,8 +34,9 @@ Rang buoc cung duoc ma hoa 1-1 voi bo kiem tra cua engine:
         dong tren 5 bit chiem cho)
 
 Khong ma hoa duoc -> KHONG bao gio lieu:
-  * Luat DIA DIEM cua GV (P.teacher_loc_rules): GV bi DONG BANG (tiet la hang
-    so ca trong cluster) - dem o info["frozen_teachers"].
+  * (05/10: luat DIA DIEM nay DA ma hoa — 1 dia diem/buoi, tiet trong khi doi
+    dia diem tru gio ra choi, toi da 1 lan doi/buoi; TKB_CPSAT_LOC=0 tro ve cach
+    cu: GV co luat dia diem bi DONG BANG, dem o info["frozen_teachers"].)
   * Truong TeacherRule / SubjectRule la (chua biet, khac mac dinh): GV dong
     bang / lop bi loai khoi cluster (info["dropped_classes"]).
   * Hai phan cong cung mon trong mot lop (vd o co dinh dung chung + phan cong
@@ -54,13 +55,17 @@ import collections
 import collections.abc
 import dataclasses
 import os
+import threading
 import time
 import traceback
 from typing import Any, Callable, Iterable
 
 from .core import NUM_DAYS, NUM_SESSIONS, NUM_SLOTS, PERIODS
 
-LANES = ("gap1", "sessions")
+# 01/10: "fill" — vung LAP TIET THIEU: o trong (class_avail) cua cum cung la bien,
+# tiet con thieu cua phan cong trong cum duoc phep dat vao; muc tieu chinh la
+# giam so tiet chua xep (truong 0 o du: THCS Hung Long 1207 tiet / 1207 o).
+LANES = ("gap1", "sessions", "fill")
 
 # Truong TeacherRule ma model ma hoa duoc (core.py 184-206). Truong khac co gia
 # tri khac mac dinh -> GV dong bang.
@@ -68,6 +73,7 @@ _TEACHER_FIELDS_ENCODED = frozenset(
     {
         "max_days",
         "max_sessions",
+        "min_sessions",
         "max_morning",
         "max_afternoon",
         "session_mode",
@@ -251,8 +257,17 @@ def build_and_solve(
     require_improve: bool = True,
     log: bool = False,
     sessions: Iterable[int] | None = None,
+    full_classes: Iterable[int] | None = None,
+    fill_quality: bool = True,
+    loc_soft: bool = False,
+    require_full: bool = False,
+    stall_s: float = 0.0,
 ) -> tuple[dict[tuple[int, int], int] | None, dict[str, Any]]:
     """Xep lai cac o tu do cua ``classes`` bang CP-SAT theo hop dong ``lane``.
+
+    ``stall_s`` (29/10): > 0 -> da co loi giai ma ``stall_s`` giay khong co loi giai moi thi dung
+    (trang thai FEASIBLE nhu het gio). Do An Phu: lan giai toan truong cua pha lap tiet tim loi giai
+    cuoi o giay 2.7-4.1 roi chay khong toi het tran 7 s.
 
     Tra ve (new_cells, info): new_cells = {(lop, o): phan cong} cho MOI o tu do
     cua cluster, hoac None (khong co loi giai cai thien / du lieu khong ma
@@ -308,6 +323,11 @@ def build_and_solve(
             info,
             t0,
             sessions,
+            full_classes,
+            fill_quality,
+            loc_soft,
+            require_full,
+            float(stall_s or 0.0),
         )
     except Exception as exc:  # du lieu la -> bao loi, khong nem
         info["status"] = "ERROR"
@@ -332,8 +352,16 @@ def _build_and_solve(
     info: dict[str, Any],
     t0: float,
     sessions: Iterable[int] | None = None,
+    full_classes: Iterable[int] | None = None,
+    fill_quality: bool = True,
+    loc_soft: bool = False,
+    require_full: bool = False,
+    stall_s: float = 0.0,
 ) -> tuple[dict[tuple[int, int], int] | None, dict[str, Any]]:
     C = P.num_classes()
+    # 01/10: lop trong full_classes tu do o MOI buoi ke ca khi co ``sessions``
+    # (lap tiet thieu: ca tuan cua lop thieu + buoi nghen cua toan truong).
+    full_set: set[int] = {int(c) for c in (full_classes or ())}
     sess_set: set[int] | None = None
     if sessions is not None:
         sess_set = {int(s) for s in sessions if 0 <= int(s) < NUM_SESSIONS}
@@ -369,9 +397,12 @@ def _build_and_solve(
             frozen.add(t)
             frozen_reasons[t] = "caller"
     loc_rules = getattr(P, "teacher_loc_rules", None) or []
+    # 05/10: luat dia diem duoc ma hoa trong mo hinh (xem khoi "yeu cau DIA
+    # DIEM" phia duoi) -> GV khong con bi dong bang. TKB_CPSAT_LOC=0 = cach cu.
+    loc_in_model = os.environ.get("TKB_CPSAT_LOC", "1") != "0"
     for t in range(T):
         # state.py 243-260: luat dia diem chi kiem khi P.teacher_loc_rules[t]
-        if t < len(loc_rules) and loc_rules[t]:
+        if t < len(loc_rules) and loc_rules[t] and not loc_in_model:
             frozen.add(t)
             frozen_reasons.setdefault(t, "location_rules")
         rule = P.teacher_rules[t]
@@ -401,7 +432,7 @@ def _build_and_solve(
             ai = row[x]
             if ai < 0 or _is_const(c, x, ai):
                 continue
-            if sess_set is not None and (x // PERIODS) not in sess_set:
+            if sess_set is not None and (x // PERIODS) not in sess_set and c not in full_set:
                 continue
             if P.a_class[ai] != c:
                 info["error"] = "cell (%d,%d) holds assignment %d of another class" % (c, x, ai)
@@ -409,6 +440,40 @@ def _build_and_solve(
             cells.add(x)
             residual[ai] += 1
         free_by_class[c] = cells
+
+    # 01/10 lane "fill": them o TRONG cua lop (class_avail, khong khoa) va so
+    # tiet CON THIEU cua tung phan cong trong cum (khong tinh phan cong co GV
+    # dong bang — tiet do la hang so, khong dat duoc).
+    fill = lane == "fill"
+    missing_add = [0] * A
+    if fill:
+        class_avail = getattr(P, "class_avail", None) or []
+        placed_cnt = [0] * A
+        for c in range(C):
+            for ai in grid[c]:
+                if ai >= 0:
+                    placed_cnt[ai] += 1
+        for c in CL:
+            avail = class_avail[c] if c < len(class_avail) else None
+            row = grid[c]
+            for x in range(NUM_SLOTS):
+                if row[x] >= 0 or locked[c][x]:
+                    continue
+                if avail is not None and not avail[x]:
+                    continue
+                if fixed_mask is not None and fixed_mask[c][x]:
+                    continue
+                if sess_set is not None and (x // PERIODS) not in sess_set and c not in full_set:
+                    continue
+                free_by_class[c].add(x)
+        for ai in range(A):
+            if P.a_class[ai] not in cl_set:
+                continue
+            miss = int(P.a_periods[ai]) - placed_cnt[ai]
+            if miss <= 0 or any(t in frozen for t in a_teachers[ai]):
+                continue
+            missing_add[ai] = miss
+            residual[ai] += miss
 
     # -- loai lop khong ma hoa duoc ----------------------------------------
     dropped: dict[int, str] = {}
@@ -451,7 +516,14 @@ def _build_and_solve(
             free.add((c, x))
     for c in dropped:
         for x in free_by_class[c]:
-            residual[grid[c][x]] -= 1
+            if grid[c][x] >= 0:
+                residual[grid[c][x]] -= 1
+    if fill:
+        for ai in range(A):
+            if missing_add[ai] and P.a_class[ai] in dropped:
+                residual[ai] -= missing_add[ai]
+                missing_add[ai] = 0
+        info["missing_before"] = sum(missing_add)
     info["free_cells"] = len(free)
     if not free:
         info["error"] = "no free cells"
@@ -468,6 +540,9 @@ def _build_and_solve(
 
     # -- hang so: chiem cho GV, o hang so theo (lop, mon, buoi) --------------
     const_occ: dict[tuple[int, int], int] = {}
+    # 05/10: dia diem cua tiet hang so tai (GV, o) -> rang buoc dia diem
+    a_loc = list(getattr(P, "a_loc", None) or [])
+    const_loc: dict[tuple[int, int], int] = {}
     const_periods: dict[tuple[int, int, int], set[int]] = {}
     cur_occ: dict[int, list[int]] = {t: [0] * NUM_SESSIONS for t in touched}
     const_cells_at: list[list[tuple[int, int]]] = [[] for _ in range(NUM_SLOTS)]
@@ -486,9 +561,22 @@ def _build_and_solve(
                 continue
             for t in a_teachers[ai]:
                 const_occ[(t, x)] = 1
+                const_loc[(t, x)] = a_loc[ai] if ai < len(a_loc) else -1
             const_cells_at[x].append((c, ai))
             if in_cluster:
                 const_periods.setdefault((c, P.a_subject[ai], s), set()).add(p)
+    # 05/10: o GV ban co dinh vi tiet chung nhieu lop (phan cong tong hop co
+    # a_teachers = ()) van la cho chiem cua GV -> hang so chiem cho + thong ke.
+    fixed_busy = getattr(P, "teacher_fixed_busy", None) or ()
+    for t, busy in enumerate(fixed_busy):
+        if not busy:
+            continue
+        for x, bai in busy.items():
+            const_occ[(t, x)] = 1
+            const_loc[(t, x)] = a_loc[bai] if bai < len(a_loc) else -1
+            if t in touched:
+                s, p = divmod(x, PERIODS)
+                cur_occ[t][s] |= 1 << p
     cur_free: dict[tuple[int, int], list[int]] = {}
     for c, x in free:
         cur_free.setdefault((grid[c][x], x // PERIODS), []).append(x % PERIODS)
@@ -498,9 +586,16 @@ def _build_and_solve(
     m = cp_model.CpModel()
     free_cover: dict[tuple[int, int], list[tuple[Any, int]]] = {key: [] for key in free}
     teacher_terms: dict[tuple[int, int], list[Any]] = collections.defaultdict(list)
+    teacher_terms_loc: dict[tuple[int, int], list[tuple[Any, int]]] = collections.defaultdict(list)
     # (lop, GV, buoi) -> [(so tiet, bien, mon)] cho class_period_caps
     class_teacher_terms: dict[tuple[int, int, int], list[tuple[int, Any, int]]] = collections.defaultdict(list)
     blocks: dict[tuple[int, int], list[tuple[Any, tuple[int, ...], int, tuple[int, ...]]]] = {}
+    unplaced_vars: dict[int, Any] = {}
+    block_short: list[Any] = []
+    min_short: list[Any] = []
+    # 05/10: lane fill + loc_soft: vi pham dia diem cua (GV, buoi) la bien phat
+    # (khong phai rang buoc cung) -> CP-SAT di qua luoi du tiet con no roi go no.
+    loc_viol: list[Any] = []
     n_choice = 0
 
     # -- bien chon khoi: (phan cong, buoi, cua so lien tiet) ----------------
@@ -572,15 +667,37 @@ def _build_and_solve(
                         free_cover[(c, x)].append((v, av))
                         for t in members:
                             teacher_terms[(t, x)].append(v)
+                            teacher_terms_loc[(t, x)].append((v, a_loc[av] if av < len(a_loc) else -1))
                     for t in members:
                         class_teacher_terms[(c, t, s)].append((d, v, si))
                     blocks.setdefault((av, s), []).append((v, tuple(window), d, blk))
                     total_terms.append(d * v)
                     m.AddHint(v, 1 if blk == cur else 0)
-        if not total_terms:
-            info["error"] = "assignment %d has no candidate block" % av
-            return None, info
-        m.Add(sum(total_terms) == r)
+        if fill:
+            if require_full and max(0, missing_add[av]) == 0:
+                if not total_terms:
+                    info["error"] = "assignment %d has no candidate block" % av
+                    return None, info
+                unplaced_vars[av] = m.NewConstant(0)
+                m.Add(sum(total_terms) == r)
+            else:
+                # so tiet KHONG xep duoc cua phan cong (muc tieu chinh cua lane)
+                u = m.NewIntVar(0, r, "u%d" % av)
+                unplaced_vars[av] = u
+                if total_terms:
+                    m.Add(sum(total_terms) + u == r)
+                else:
+                    m.Add(u == r)
+                m.AddHint(u, max(0, missing_add[av]))
+                if require_full:
+                    # 05/10: vung go no (giu du tiet): moi tiet dang xep phai xep lai —
+                    # bai toan kha thi thuan, CP-SAT bac bo nhanh khi vung khong go duoc.
+                    m.Add(u <= max(0, missing_add[av]))
+        else:
+            if not total_terms:
+                info["error"] = "assignment %d has no candidate block" % av
+                return None, info
+            m.Add(sum(total_terms) == r)
         for s in range(NUM_SESSIONS):
             lst = blocks.get((av, s))
             if lst and len(lst) > 1:
@@ -588,10 +705,45 @@ def _build_and_solve(
     info["choice_vars"] = n_choice
 
     for key, lst in free_cover.items():
+        if fill:
+            # lane fill: o duoc phep de trong (tiet chua xep tinh o unplaced_vars)
+            if len(lst) > 1:
+                m.AddAtMostOne(v for v, _av in lst)
+            continue
         if not lst:
             info["error"] = "free cell %s has no candidate" % (key,)
             return None, info
         m.AddExactlyOne(v for v, _av in lst)
+
+    # -- 07/10: tiet chung nhieu lop tha tu do — ca nhom cung o ----------------
+    # P.joint_sync (core.compile_problem(joint_groups=)): phan cong lop dau (mang
+    # GV) va cac lop con lai (khong GV) phai phu dung cung tap o. Lop ngoai cum /
+    # o hang so -> hang so 0/1, nen nhom van dong bo khi chi mot phan la bien.
+    n_sync = 0
+    for group in getattr(P, "joint_sync", None) or ():
+        members = [int(ai) for ai in group if 0 <= int(ai) < A]
+        if len(members) < 2:
+            continue
+
+        def _cov(ai: int, x: int) -> Any:
+            c = P.a_class[ai]
+            if (c, x) in free_cover:
+                return sum(v for v, av in free_cover[(c, x)] if av == ai)
+            return 1 if grid[c][x] == ai else 0
+
+        lead = members[0]
+        for x in range(NUM_SLOTS):
+            e0 = _cov(lead, x)
+            for ai in members[1:]:
+                e1 = _cov(ai, x)
+                if isinstance(e0, int) and isinstance(e1, int):
+                    if e0 != e1:
+                        info["error"] = "joint group %s out of sync at slot %d" % (tuple(members), x)
+                        return None, info
+                    continue
+                m.Add(e0 == e1)
+                n_sync += 1
+    info["joint_sync"] = n_sync
 
     # -- bieu thuc muc mon (lop, mon, buoi) ---------------------------------
     def pres(c: int, si: int, s: int) -> Any:
@@ -636,6 +788,18 @@ def _build_and_solve(
         day_pres_cache[key] = out
         return out
 
+    def _blocks_now(c: int, si: int, length: int) -> int:
+        """So buoi lop c dang co >= length tiet cua mon si (luoi vao)."""
+
+        n_blk = 0
+        row = grid[c]
+        for s_ in range(NUM_SESSIONS):
+            b0 = s_ * PERIODS
+            cnt = sum(1 for q in range(PERIODS) if row[b0 + q] >= 0 and P.a_subject[row[b0 + q]] == si)
+            if cnt >= length:
+                n_blk += 1
+        return n_blk
+
     # -- luat tuan cua mon (checks.py check_class_subject_week 98-140) ------
     for av in ais_var:
         rule = P.a_rule[av]
@@ -676,7 +840,21 @@ def _build_and_solve(
                 elif len(const) >= length:
                     terms.append(1)
             if minimum > 0:
-                m.Add(sum(terms) >= minimum)
+                viol0 = 1 if _blocks_now(c, si, length) < minimum else 0
+                if fill and av in unplaced_vars and not (require_full and max(0, missing_add[av]) == 0 and viol0 == 0):
+                    # 01/10 lane fill: lich DO DANG duoc hoan "tiet doi toi thieu"
+                    # (nhu defer_min cua pha 1/2) CHI khi mon con tiet chua xep, hoac
+                    # luoi vao da thieu san -> mon xep du thi luat van cung. Thieu
+                    # dong nay mo hinh VO NGHIEM (do truong 61 lop: GDTC 2 tiet chi
+                    # chieu, min 1 tiet doi, chua xep tiet nao -> 85/97 lan INFEASIBLE).
+                    short = m.NewIntVar(0, minimum, "lbs%d_%d" % (av, length))
+                    m.Add(sum(terms) + short >= minimum)
+                    m.Add(short <= unplaced_vars[av] + viol0 * minimum)
+                    # thieu cap bi PHAT ngang mot tiet chua xep: chi con lai khi
+                    # khong the tao cap trong vung (khong phai vi solver luoi).
+                    block_short.append(short)
+                else:
+                    m.Add(sum(terms) >= minimum)
             if maximum > 0:
                 m.Add(sum(terms) <= maximum)
 
@@ -718,6 +896,20 @@ def _build_and_solve(
     for (t, x), lst in teacher_terms.items():  # state.py 121-146
         if len(lst) > 1:
             m.AddAtMostOne(lst)
+
+    _t_placed: dict[int, int] = collections.Counter()
+    _t_expected: dict[int, int] = collections.Counter()
+    for ai in range(A):
+        for tt in a_teachers[ai]:
+            _t_expected[tt] += int(P.a_periods[ai])
+    for c_ in range(C):
+        for ai in grid[c_]:
+            if ai >= 0:
+                for tt in a_teachers[ai]:
+                    _t_placed[tt] += 1
+
+    def t_complete(t: int) -> bool:
+        return _t_placed[t] >= _t_expected[t]
 
     def occ_expr(t: int, x: int) -> Any:
         if const_occ.get((t, x)):
@@ -775,6 +967,28 @@ def _build_and_solve(
             # state.py 261-286
             if rule.max_sessions > 0:
                 m.Add(sum(ne_list) <= rule.max_sessions)
+            # 05/10: so buoi toi thieu — chi khi luoi vao da du tiet cua GV (lane
+            # gap1/sessions); lane fill (con tiet thieu) khong ep.
+            if rule.min_sessions > 0 and not fill and t_complete(t):
+                m.Add(sum(ne_list) >= rule.min_sessions)
+            elif rule.min_sessions > 0 and fill:
+                cur_t_sess = sum(1 for s_ in range(NUM_SESSIONS) if cur_occ[t][s_])
+                if require_full and sum(missing_add) == 0 and t_complete(t) and cur_t_sess >= rule.min_sessions:
+                    m.Add(sum(ne_list) >= rule.min_sessions)
+                elif (
+                    require_full
+                    and sum(missing_add) == 0
+                    and t_complete(t)
+                    and not fill_quality
+                    and any(not isinstance(ne_list[s_], int) and not cur_occ[t][s_] for s_ in range(NUM_SESSIONS))
+                ):
+                    m.Add(sum(ne_list) >= min(rule.min_sessions, cur_t_sess + 1))
+                else:
+                    # 05/10 lane fill: thieu buoi so voi toi thieu bi PHAT ngang mot
+                    # tiet chua xep (khong ep cung: con tiet chua xep thi chua du buoi).
+                    ms = m.NewIntVar(0, rule.min_sessions, "mss%d" % t)
+                    m.Add(sum(ne_list) + ms >= rule.min_sessions)
+                    min_short.append(ms)
             if rule.max_morning > 0:
                 m.Add(sum(ne_list[s] for s in range(0, NUM_SESSIONS, 2)) <= rule.max_morning)
             if rule.max_afternoon > 0:
@@ -844,9 +1058,95 @@ def _build_and_solve(
                         for d in range(NUM_DAYS):
                             if any(not isinstance(e, int) for e in day_terms[d]):
                                 m.Add(sum(day_terms[d]) <= per_day)
+        # 05/10: yeu cau DIA DIEM (core.location_rule_debt == 0) ma hoa truc tiep
+        # thay vi dong bang GV: chi xet o co dia diem (>= 0), y[p][L] = GV day
+        # o tiet p tai dia diem L (hang so hoac tong bien cung dia diem).
+        if loc_in_model and rule is not None and t < len(loc_rules) and loc_rules[t]:
+            for s in range(NUM_SESSIONS):
+                one = rule.loc_one[s]
+                gap = rule.loc_gap[s]
+                move = rule.loc_move[s]
+                breaks = rule.loc_breaks[s]
+                if not (one or gap or move or breaks):
+                    continue
+                base = s * PERIODS
+                ys: list[dict[int, Any]] = []
+                has_var = False
+                for p in range(PERIODS):
+                    x = base + p
+                    row: dict[int, Any] = {}
+                    if const_occ.get((t, x)):
+                        L = const_loc.get((t, x), -1)
+                        if L >= 0:
+                            row[L] = 1
+                    else:
+                        by_l: dict[int, list[Any]] = collections.defaultdict(list)
+                        for v, L in teacher_terms_loc.get((t, x), ()):
+                            if L >= 0:
+                                by_l[L].append(v)
+                        for L, lst in by_l.items():
+                            row[L] = sum(lst)
+                            has_var = True
+                    ys.append(row)
+                if not has_var:
+                    continue
+                locs = sorted({L for row in ys for L in row})
+                if len(locs) < 2:
+                    continue
+                n_loc_cons = 0
+                lv: Any = 0
+                pre_loc_bad = False
+                if fill and not loc_soft and require_full and not fill_quality:
+                    try:
+                        pre_loc_bad = int(soft.location_session_debt(t, s)) > 0
+                    except Exception:
+                        pre_loc_bad = False
+                if (loc_soft and fill) or pre_loc_bad:
+                    lv = m.NewBoolVar("lv%d_%d" % (t, s))
+                    loc_viol.append(lv)
+                if one:
+                    lits = []
+                    for L in locs:
+                        bl = m.NewBoolVar("lo%d_%d_%d" % (t, s, L))
+                        for row in ys:
+                            if L in row:
+                                m.Add(bl >= row[L])
+                        lits.append(bl)
+                    m.Add(sum(lits) <= 1 + (len(locs) - 1) * lv)
+                    n_loc_cons += 1
+                if gap or breaks:
+                    for p in range(PERIODS - 1):
+                        if p in breaks:
+                            continue
+                        r1, r2 = ys[p], ys[p + 1]
+                        for L1, e1 in r1.items():
+                            for L2, e2 in r2.items():
+                                if L1 != L2 and not (isinstance(e1, int) and isinstance(e2, int)):
+                                    m.Add(e1 + e2 <= 1 + lv)
+                                    n_loc_cons += 1
+                if move:
+                    for p in range(PERIODS):
+                        for q in range(p + 1, PERIODS):
+                            for r in range(q + 1, PERIODS):
+                                for L1, e1 in ys[p].items():
+                                    for L2, e2 in ys[q].items():
+                                        if L2 == L1:
+                                            continue
+                                        for L3, e3 in ys[r].items():
+                                            if L3 == L2:
+                                                continue
+                                            if isinstance(e1, int) and isinstance(e2, int) and isinstance(e3, int):
+                                                continue
+                                            m.Add(e1 + e2 + e3 <= 2 + lv)
+                                            n_loc_cons += 1
+                info["loc_constraints"] = info.get("loc_constraints", 0) + n_loc_cons
         # state.py 207-212
         for x in P.teacher_must[t]:
             if const_occ.get((t, x)):
+                continue
+            if fill:
+                # lane fill: o "bat buoc day" la no luat GV (penalty) — nguoi goi
+                # chi nhan khi penalty() khong tang, khong ep cung o day.
                 continue
             if teacher_terms.get((t, x)):
                 m.Add(sum(teacher_terms[(t, x)]) == 1)
@@ -945,10 +1245,43 @@ def _build_and_solve(
     SG = sum(SG_terms)
     G1 = sum(G1_terms)
     G2 = sum(G2_terms)
-    m.Add(SG <= cur[1])
-    m.Add(G2 <= cur[3])
-    m.Add(S <= cur[0])
-    if lane == "gap1":
+    exact_quality = bool(fill and fill_quality and require_full and sum(missing_add) == 0 and not loc_viol)
+    if fill:
+        # lap tiet thieu: khong ep "khong xau hon" (dat them tiet co the buoc
+        # tao buoi moi); so tiet chua xep la tren het, chat luong GV la phu.
+        U = (
+            (sum(unplaced_vars.values()) if unplaced_vars else 0)
+            + (sum(block_short) if block_short else 0)
+            + (sum(min_short) if min_short else 0)
+        )
+        if exact_quality:
+            m.Add(SG <= cur[1])
+            m.Add(SG * 100 + G2 <= cur[1] * 100 + cur[3])
+            m.Add(SG * 10000 + G2 * 100 + S <= cur[1] * 10000 + cur[3] * 100 + cur[0])
+            m.Minimize(U * 10**8 + SG * 50000 + G2 * 1000 + S * 40 + G1)
+        elif loc_viol:
+            # tiet chua xep tren het, roi so buoi vi pham dia diem (nguoi goi chi
+            # nhan khi het vi pham), roi chat luong neu fill_quality
+            LV = sum(loc_viol)
+            if not loc_soft and require_full and not fill_quality:
+                m.Add(LV <= len(loc_viol) - 1)
+            if fill_quality:
+                m.Minimize(U * 10**8 + LV * 10**6 + SG * 50000 + G2 * 1000 + S * 40 + G1)
+            else:
+                m.Minimize(U * 10000 + LV)
+        elif fill_quality or not unplaced_vars:
+            m.Minimize(U * 10**8 + SG * 50000 + G2 * 1000 + S * 40 + G1)
+        else:
+            # chi so tiet: cham 0 la OPTIMAL ngay, khong dot thoi gian vao chat
+            # luong (pha 3 + vong chat luong sau do lo).
+            m.Minimize(U)
+    else:
+        m.Add(SG <= cur[1])
+        m.Add(G2 <= cur[3])
+        m.Add(S <= cur[0])
+    if fill:
+        pass
+    elif lane == "gap1":
         m.Add(G1 <= cur[2] - (1 if require_improve else 0))
         m.Minimize(G1 * 1000 + S)
     else:
@@ -967,23 +1300,56 @@ def _build_and_solve(
     solver = cp_model.CpSolver()
     solver.parameters.num_workers = max(1, workers)
     solver.parameters.max_time_in_seconds = max(0.01, time_limit)
-    solver.parameters.random_seed = seed
+    # SatParameters.random_seed is int32. Browser/backend seeds can be int64;
+    # fold them at the CP-SAT boundary so joint relocation cannot fail before
+    # Solve. Existing nonnegative int32 seeds keep their exact behavior.
+    solver.parameters.random_seed = int(seed) & 0x7FFFFFFF
     solver.parameters.log_search_progress = log
     timeline: list[tuple[float, int, int]] = []
     info["timeline"] = timeline
     stopped = [False]
+    cur_lex = (int(cur[1]), int(cur[3]), int(cur[0]), int(cur[2]))
 
     class _Callback(cp_model.CpSolverSolutionCallback):
         def __init__(self) -> None:
             super().__init__()
 
         def on_solution_callback(self) -> None:
-            timeline.append((round(time.monotonic() - t0, 2), int(self.Value(G1)), int(self.Value(S))))
+            last_solution[0] = time.monotonic()
+            s_val = int(self.Value(S))
+            g1_val = int(self.Value(G1))
+            timeline.append((round(time.monotonic() - t0, 2), g1_val, s_val))
             if stop_check is not None and _safe_stop(stop_check):
                 stopped[0] = True
                 self.StopSearch()
+                return
+            if exact_quality:
+                sg_val = int(self.Value(SG))
+                g2_val = int(self.Value(G2))
+                cand_lex = (sg_val, g2_val, s_val, g1_val)
+                if cand_lex < cur_lex:
+                    if sg_val < cur_lex[0] or g2_val < cur_lex[1] or s_val < cur_lex[2]:
+                        self.StopSearch()
+                        return
+                    if g1_val <= cur_lex[3] - 2 or (time.monotonic() - t0 - build_s) >= 0.35:
+                        self.StopSearch()
+                        return
 
-    status = solver.Solve(m, _Callback())
+    last_solution = [0.0]
+    stall_done = threading.Event()
+    if stall_s > 0:
+        def _stall_watch() -> None:
+            while not stall_done.wait(0.1):
+                if last_solution[0] and time.monotonic() - last_solution[0] >= stall_s:
+                    info["stalled"] = True
+                    solver.stop_search()
+                    return
+
+        threading.Thread(target=_stall_watch, name="cpsat-stall", daemon=True).start()
+    try:
+        status = solver.Solve(m, _Callback())
+    finally:
+        stall_done.set()
     info["status"] = solver.StatusName(status)
     info["solve_s"] = round(time.monotonic() - t0 - build_s, 2)
     info["stopped"] = stopped[0]
@@ -1008,15 +1374,28 @@ def _build_and_solve(
                     return None, info
                 new_cells[key] = av
                 written[av] += 1
-    if len(new_cells) != len(free):
+    if fill:
+        for key in free:
+            new_cells.setdefault(key, -1)
+        info["unplaced"] = int(sum(solver.Value(u) for u in unplaced_vars.values()))
+        info["block_short"] = int(sum(solver.Value(b) for b in block_short))
+        info["min_sessions_short"] = int(sum(solver.Value(b) for b in min_short))
+        info["loc_viol"] = int(sum(solver.Value(b) for b in loc_viol))
+        for av, u in unplaced_vars.items():
+            if written[av] + int(solver.Value(u)) != residual[av]:
+                info["error"] = "assignment %d residual %d != written %d + unplaced" % (av, residual[av], written[av])
+                return None, info
+    elif len(new_cells) != len(free):
         info["error"] = "extraction covered %d of %d free cells" % (len(new_cells), len(free))
         return None, info
-    for av in ais_var:
+    for av in ais_var if not fill else ():
         if written[av] != residual[av]:
             info["error"] = "assignment %d residual %d != written %d" % (av, residual[av], written[av])
             return None, info
     occ_check: set[tuple[int, int]] = set()
     for (c, x), av in new_cells.items():
+        if av < 0:
+            continue
         for t in a_teachers[av]:
             if const_occ.get((t, x)) or (t, x) in occ_check:
                 info["error"] = "teacher %d double-booked at slot %d" % (t, x)

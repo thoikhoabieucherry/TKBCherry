@@ -37,6 +37,25 @@
     2.07, 2.07, 3.8, 3.8, 3.8, 3.8, 3.8, 3.8, 2.07
   ];
   const TEACHER1_ROW_HEIGHTS = Array.from({length: TEACHER1_PAGE_ROWS}, () => 12.75);
+  // TKB phòng: A4 dọc, các phòng xếp dọc (tối đa 4 phòng/trang), mỗi phòng một bảng Buổi/Tiết x Thứ.
+  // Ô ngắn in một dòng; ô dài (tiết học chung nhiều lớp) xuống dòng và hàng đó cao lên theo số dòng.
+  const ROOM_SHEET_NAME = 'PHONG';
+  const ROOM_COL_WIDTHS = [5, 4.5, 15, 15, 15, 15, 15, 15];
+  const ROOM_HEAD_HEIGHTS = [18, 20, 16, 6];
+  const ROOM_NAME_HEIGHT = 18;
+  const ROOM_HEADER_HEIGHT = 15;
+  const ROOM_LESSON_HEIGHT = 13.5;
+  const ROOM_GAP_HEIGHT = 7;
+  const ROOM_LINE_HEIGHT = 12;
+  const ROOM_LONG_TEXT = 24;
+  const ROOM_WRAP_CHARS = 16;
+  const ROOMS_PER_PAGE = 4;
+  const ROOM_PAGE_HEIGHT = 780;
+  const ROOM_PRINT = {
+    paperSize: 9,
+    margins: {left:'0.25', right:'0.25', top:'0.35', bottom:'0.3', header:'0', footer:'0'},
+    centered: 'horizontal'
+  };
   const FONT_NAME = 'Times New Roman';
   const THIN_BORDER_COLOR = 'FF000000';
   const PRINT_MARGIN = 0.08;
@@ -302,6 +321,69 @@
     return lops.map(lop => classSchedulePayload(lop));
   }
 
+  // 01/10/2026 (chủ dự án, THCS Tăng Bạt Hổ — 2 cơ sở): file Excel TKB giáo viên (mẫu 1, mẫu 2) và
+  // TKB tổng (theo lớp, theo giáo viên) phải phân biệt ĐỊA ĐIỂM bằng màu như trang Sắp xếp (vạch màu
+  // cạnh trái ô, 23/09 tkbLocationCellInfo). Excel: cạnh trái đậm đúng màu web + nền nhạt cùng tông,
+  // kèm dòng chú thích tên địa điểm. Chỉ tô khi trường có >= 2 địa điểm; ô trống hoặc ô có lớp ở
+  // nhiều địa điểm (trùng lịch) không tô — giống web.
+  const LOCATION_COLORS = [
+    {edge:'FF1677FF', fill:'FFBAE0FF'},
+    {edge:'FFFA8C16', fill:'FFFFE7BA'},
+    {edge:'FF52C41A', fill:'FFD9F7BE'},
+    {edge:'FF722ED1', fill:'FFEFDBFF'}
+  ];
+
+  function exportLocationList(){
+    try{ if(typeof tkbLocationList === 'function') return tkbLocationList().map(safe).filter(Boolean); }catch(_){ }
+    const set = new Set();
+    (Array.isArray(DATA?.lop) ? DATA.lop : []).forEach(l => { const v = safe(l?.diadiem); if(v) set.add(v); });
+    (Array.isArray(DATA?.phong) ? DATA.phong : []).forEach(p => { const v = safe(p?.diadiem); if(v) set.add(v); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'vi', {numeric:true}));
+  }
+
+  function exportLocations(){
+    const list = exportLocationList();
+    return list.length >= 2 ? list : null;
+  }
+
+  // Địa điểm = của phòng (DATA.phong.diadiem) nếu tiết có phòng, không thì của lớp (như tkbEntryLocation).
+  function exportEntryLocation(entry){
+    try{ if(typeof tkbEntryLocation === 'function') return safe(tkbEntryLocation(entry)); }catch(_){ }
+    const room = safe(entry?.room);
+    if(room){
+      const p = (Array.isArray(DATA?.phong) ? DATA.phong : []).find(x => [x?.id, x?.ma, x?.ten].some(v => safe(v) === room));
+      const v = safe(p?.diadiem);
+      if(v) return v;
+    }
+    const l = (Array.isArray(DATA?.lop) ? DATA.lop : []).find(x => safe(x?.id) === safe(entry?.classId));
+    return safe(l?.diadiem);
+  }
+
+  // Chỉ số màu của ô (-1 = không tô). Tiết học chung đã gộp (jointClassIds) xét đủ các lớp.
+  function locationIndexFor(entries, locations){
+    if(!locations) return -1;
+    const arr = (Array.isArray(entries) ? entries : []).flatMap(e => Array.isArray(e?.jointClassIds) && e.jointClassIds.length
+      ? e.jointClassIds.map(id => ({classId:id, room:e.room}))
+      : [e]);
+    if(!arr.length) return -1;
+    const locs = Array.from(new Set(arr.map(exportEntryLocation).filter(Boolean)));
+    if(locs.length !== 1) return -1;
+    return locations.indexOf(locs[0]);
+  }
+
+  function roomForLesson(classCanon, mon){
+    try{ if(typeof getRoomForClassMon === 'function') return safe(getRoomForClassMon(classCanon, mon)); }catch(_){ }
+    return '';
+  }
+
+  function teacherLocationRows(sched, days, session, locations){
+    const rows = [];
+    for(let ti = 0; ti < 5; ti++){
+      rows.push(days.map(d => locationIndexFor(sched?.[d]?.[session]?.[ti], locations)));
+    }
+    return rows;
+  }
+
   function schoolClassSchedulePayload(lop){
     const classId = safe(lop?.id);
     const tkb = findClassTkb(lop);
@@ -318,6 +400,22 @@
       }
       return rows;
     };
+    const locations = exportLocations();
+    const classCanon = classCanonForTeacherLookup(lop);
+    const locRowFor = session => {
+      const rows = [];
+      for(let ti = 0; ti < 5; ti++){
+        rows.push(days.map(d => {
+          const raw = tkb?.[d]?.[session]?.[ti];
+          if(!locations || !raw || raw === 'OFF') return -1;
+          let mon = '';
+          try{ mon = safe(cellMon(raw)); }catch(_){ mon = safe(raw?.mon || raw); }
+          if(!mon) return -1;
+          return locationIndexFor([{classId, mon, room: roomForLesson(classCanon, mon)}], locations);
+        }));
+      }
+      return rows;
+    };
     return {
       schoolName: getStoredSchoolName(),
       scheduleNumber: getScheduleNumber(),
@@ -325,7 +423,11 @@
       className: classDisplay(lop) || classId,
       dayLabels,
       morning: rowFor('sang'),
-      afternoon: rowFor('chieu')
+      afternoon: rowFor('chieu'),
+      locations,
+      classLoc: locationIndexFor([{classId}], locations),
+      morningLoc: locRowFor('sang'),
+      afternoonLoc: locRowFor('chieu')
     };
   }
 
@@ -471,7 +573,7 @@
           if(!mon) continue;
           let teachers = '';
           try{ teachers = getTeacherForClassMon(classCanon, mon); }catch(_){ teachers = ''; }
-          if(teacherValueContains(teachers, code)) sched[thu].sang[ti].push({classId, classDisplay: display, mon});
+          if(teacherValueContains(teachers, code)) sched[thu].sang[ti].push({classId, classDisplay: display, mon, room: roomForLesson(classCanon, mon)});
         }
         for(let ti = 0; ti < afternoonCount; ti++){
           const raw = tkb?.[thu]?.chieu?.[ti];
@@ -481,7 +583,7 @@
           if(!mon) continue;
           let teachers = '';
           try{ teachers = getTeacherForClassMon(classCanon, mon); }catch(_){ teachers = ''; }
-          if(teacherValueContains(teachers, code)) sched[thu].chieu[ti].push({classId, classDisplay: display, mon});
+          if(teacherValueContains(teachers, code)) sched[thu].chieu[ti].push({classId, classDisplay: display, mon, room: roomForLesson(classCanon, mon)});
         }
       });
     });
@@ -580,7 +682,10 @@
       infoLine: `  - Giáo viên : ${label}`,
       dayLabels,
       morning: rowFor('sang'),
-      afternoon: rowFor('chieu')
+      afternoon: rowFor('chieu'),
+      locations: exportLocations(),
+      morningLoc: teacherLocationRows(sched, days, 'sang', exportLocations()),
+      afternoonLoc: teacherLocationRows(sched, days, 'chieu', exportLocations())
     };
   }
 
@@ -612,7 +717,10 @@
       className: teacherShort(code) || teacherCode(code),
       dayLabels,
       morning: rowFor('sang'),
-      afternoon: rowFor('chieu')
+      afternoon: rowFor('chieu'),
+      locations: exportLocations(),
+      morningLoc: teacherLocationRows(sched, days, 'sang', exportLocations()),
+      afternoonLoc: teacherLocationRows(sched, days, 'chieu', exportLocations())
     };
   }
 
@@ -645,7 +753,10 @@
       periodCount: teacherPeriodCount(sched, days),
       dayLabels,
       morning: rowFor('sang'),
-      afternoon: rowFor('chieu')
+      afternoon: rowFor('chieu'),
+      locations: exportLocations(),
+      morningLoc: teacherLocationRows(sched, days, 'sang', exportLocations()),
+      afternoonLoc: teacherLocationRows(sched, days, 'chieu', exportLocations())
     };
   }
 
@@ -653,6 +764,171 @@
     const teachers = allTeacherRecordsForExport();
     if(!teachers.length) throw new Error('Chưa có giáo viên để xuất Excel.');
     return teachers.map(teacherTemplate1Payload);
+  }
+
+  // 10/10/2026 (chủ dự án, THCS Tân Phú Trung — 3 phòng Tin học): mục "TKB phòng" ở In TKB, mỗi phòng
+  // một bảng Thứ x Tiết ghi "Lớp - Môn - GV". Phòng lấy từ hai nguồn như trang Sắp xếp: phòng bộ môn
+  // dùng chung (DATA.tkbSubjectRooms, tự chia mỗi lượt — tkbEntrySubjectRoom, cùng màu vạch cạnh phải
+  // trên web) và phòng gắn theo Lớp|Môn (getRoomForClassMon, chế độ xem Phòng). Tiết thuộc nhóm phòng
+  // bộ môn mà hết phòng không bị giấu: nằm ở bảng "chưa có phòng" của nhóm đó.
+  const ROOM_COLORS = [
+    {edge:'FFEB2F96', fill:'FFFFD6E7'},
+    {edge:'FF13C2C2', fill:'FFB5F5EC'},
+    {edge:'FF5B3A29', fill:'FFE8D9CF'},
+    {edge:'FFA0D911', fill:'FFEAFF8F'},
+    {edge:'FF2F54EB', fill:'FFD6E4FF'},
+    {edge:'FF595959', fill:'FFD9D9D9'}
+  ];
+  const ROOM_MISSING_COLOR = {edge:'FFF5222D', fill:'FFFFCCC7'};
+
+  function roomGroupsForExport(){
+    try{ if(typeof tkbSubjectRoomGroups === 'function') return tkbSubjectRoomGroups() || []; }catch(_){ }
+    return [];
+  }
+
+  function subjectRoomForLesson(classId, thu, buoi, ti){
+    try{ if(typeof tkbEntrySubjectRoom === 'function') return tkbEntrySubjectRoom({classId, thu, buoi, ti}) || null; }catch(_){ }
+    return null;
+  }
+
+  // GV của một ô: như lúc chia phòng (tkbSubjectRoomPlan) — GV ghi trong ô trước, không có thì theo phân công.
+  function lessonTeacherCodes(lop, raw, mon){
+    const classCanon = classCanonForTeacherLookup(lop);
+    let teachers = '';
+    if(raw && typeof raw === 'object' && raw.gv) teachers = raw.gv;
+    try{ if(!teachers && typeof cellLegacyTeacher === 'function') teachers = cellLegacyTeacher(raw, classCanon); }catch(_){ }
+    try{ if(!teachers) teachers = getTeacherForClassMon(classCanon, mon); }catch(_){ }
+    return teacherCodesFromValue(teachers);
+  }
+
+  function assignedRoomLocation(name){
+    const p = (Array.isArray(DATA?.phong) ? DATA.phong : []).find(x => [x?.id, x?.ma, x?.ten].some(v => safe(v) === name));
+    return safe(p?.diadiem);
+  }
+
+  // Chữ của một ô: "Lớp - Môn - GV". Các lớp cùng GV cùng môn (tiết học chung) gộp một mục
+  // "6A1, 6A2 - Môn - GV"; mục dài thì danh sách lớp một dòng, "Môn - GV" dòng dưới. Nhiều mục
+  // trong một ô (trùng phòng, hoặc bảng "chưa có phòng") mỗi mục một dòng.
+  function roomCellText(entries){
+    const items = new Map();
+    (Array.isArray(entries) ? entries : []).forEach(e => {
+      const key = `${e.subject}|${e.teachers}`;
+      if(!items.has(key)) items.set(key, {classes: [], subject: e.subject, teachers: e.teachers});
+      const item = items.get(key);
+      if(e.classText && !item.classes.includes(e.classText)) item.classes.push(e.classText);
+    });
+    return Array.from(items.values()).map(item => {
+      const head = item.classes.join(', ');
+      const tail = [item.subject, item.teachers].filter(Boolean).join(' - ');
+      const one = [head, tail].filter(Boolean).join(' - ');
+      return (one.length > ROOM_LONG_TEXT && head && tail) ? `${head}\n${tail}` : one;
+    }).join('\n');
+  }
+
+  function allRoomSchedulePayloads(){
+    const days = (typeof DAYS !== 'undefined' && Array.isArray(DAYS) && DAYS.length) ? DAYS.slice(0, 6) : ['thu2','thu3','thu4','thu5','thu6','thu7'];
+    const dayLabels = days.map(d => {
+      let label = '';
+      try{ label = safe(LABEL?.[d]); }catch(_){ }
+      return label || dayShortLabel(d, d);
+    });
+    const groups = roomGroupsForExport();
+    const rooms = [];
+    const byKey = new Map();
+    const bucket = (key, info) => {
+      if(byKey.has(key)) return byKey.get(key);
+      const sched = {};
+      days.forEach(d => {
+        sched[d] = {sang: Array.from({length: 5}, () => []), chieu: Array.from({length: 5}, () => [])};
+      });
+      const room = Object.assign({key, sched}, info);
+      byKey.set(key, room);
+      rooms.push(room);
+      return room;
+    };
+    groups.forEach((g, gi) => {
+      g.rooms.forEach((r, ri) => bucket(`g:${gi}:${ri}`, {name: r.name, group: g.name, location: r.diadiem, colorIndex: ri % ROOM_COLORS.length, order: gi}));
+    });
+    const groupIndexOf = rec => {
+      const hit = groups.findIndex(g => g.name === rec.group && (rec.idx < 0 || g.rooms[rec.idx]?.name === rec.name));
+      return hit >= 0 ? hit : groups.findIndex(g => g.name === rec.group);
+    };
+
+    allClassRecordsForExport().forEach(lop => {
+      const classId = safe(lop?.id);
+      const tkb = findClassTkb(lop);
+      if(!tkb) return;
+      const classText = classDisplay(lop) || classId;
+      const classCanon = classCanonForTeacherLookup(lop);
+      days.forEach(d => {
+        ['sang', 'chieu'].forEach(session => {
+          for(let ti = 0; ti < 5; ti++){
+            const raw = tkb?.[d]?.[session]?.[ti];
+            if(!raw || raw === 'OFF') continue;
+            let mon = '';
+            try{ mon = safe(cellMon(raw)); }catch(_){ mon = safe(raw?.mon || raw); }
+            if(!mon) continue;
+            let target = null;
+            const rec = subjectRoomForLesson(lop?.id, d, session, ti);
+            if(rec){
+              const gi = groupIndexOf(rec);
+              if(gi < 0) continue;
+              target = (!rec.conflict && rec.idx >= 0)
+                ? byKey.get(`g:${gi}:${rec.idx}`)
+                : bucket(`g:${gi}:x`, {name: 'Chưa có phòng', group: groups[gi].name, location: '', colorIndex: -1, order: gi, missing: true});
+            }else{
+              const name = roomForLesson(classCanon, mon);
+              if(name) target = bucket(`p:${name}`, {name, group: '', location: assignedRoomLocation(name), colorIndex: -1, order: groups.length});
+            }
+            if(!target) continue;
+            target.sched[d][session][ti].push({
+              classText,
+              subject: lessonText(raw, classId) || monShort(mon),
+              teachers: lessonTeacherCodes(lop, raw, mon).map(code => teacherShort(code)).filter(Boolean).join(', ')
+            });
+          }
+        });
+      });
+    });
+    if(!rooms.length) throw new Error('Trường này chưa khai phòng nên chưa có TKB phòng để xuất.');
+
+    // Phòng bộ môn theo thứ tự khai báo (bảng "chưa có phòng" ngay sau nhóm của nó), rồi phòng gắn theo Lớp|Môn.
+    const rank = room => room.key.startsWith('p:') ? 2 : (room.missing ? 1 : 0);
+    const sorted = rooms.map((room, index) => ({room, index})).sort((a, b) =>
+      (a.room.order - b.room.order) || (rank(a.room) - rank(b.room))
+      || (rank(a.room) === 2 ? a.room.name.localeCompare(b.room.name, 'vi', {numeric:true}) : a.index - b.index)
+    ).map(x => x.room);
+
+    const schoolName = getStoredSchoolName();
+    const scheduleNumber = getScheduleNumber();
+    const effectiveDate = getEffectiveDate();
+    return sorted.map(room => {
+      let periodCount = 0;
+      const rowsFor = (session, pick) => {
+        const rows = [];
+        for(let ti = 0; ti < 5; ti++) rows.push(days.map(d => pick(room.sched[d][session][ti])));
+        return rows;
+      };
+      days.forEach(d => ['sang', 'chieu'].forEach(session => room.sched[d][session].forEach(entries => {
+        periodCount += room.missing ? new Set(entries.map(e => e.teachers || e.classText)).size : (entries.length ? 1 : 0);
+      })));
+      // Một phòng mà cùng giờ có hai GV khác nhau = trùng phòng (bảng "chưa có phòng" thì không tính).
+      const clash = entries => !room.missing && new Set(entries.map(e => e.teachers || e.classText)).size > 1;
+      return {
+        schoolName, scheduleNumber, effectiveDate,
+        roomName: room.name,
+        groupName: room.group,
+        location: room.location,
+        colorIndex: room.colorIndex,
+        missing: !!room.missing,
+        periodCount,
+        dayLabels,
+        morning: rowsFor('sang', roomCellText),
+        afternoon: rowsFor('chieu', roomCellText),
+        morningClash: rowsFor('sang', clash),
+        afternoonClash: rowsFor('chieu', clash)
+      };
+    });
   }
 
   function cellAddr(r, c){
@@ -730,7 +1006,52 @@
     teacher1Info: style(8, {align:'left', border:false, wrap:false, shrink:true}),
     teacher1Table: style(8, {wrap:false, shrink:true}),
     teacher1Session: style(8, {wrap:false, shrink:true, rotation:90}),
+    locationLegend: style(7, {wrap:false, shrink:true}),
+    roomSchool: style(11, {bold:true, border:false, wrap:false, shrink:true}),
+    roomTitle: style(13, {bold:true, border:false, wrap:false, shrink:true}),
+    roomSub: style(10, {italic:true, border:false, wrap:false, shrink:true}),
+    roomName: style(11, {bold:true, align:'left', wrap:false, shrink:true, fill:'FFF2F2F2'}),
+    roomHeader: style(10, {bold:true, wrap:false, shrink:true, fill:'FFF2F2F2'}),
+    roomLabel: style(10, {wrap:false, shrink:true}),
+    roomSession: style(10, {bold:true, wrap:false, shrink:true, rotation:90}),
+    roomCell: style(9, {wrap:false, shrink:true}),
+    roomCellWrap: style(9),
+    roomCellClash: style(9, {bold:true, fill:'FFFFCCC7'}),
+    roomGap: style(6, {border:false}),
   };
+
+  // Kiểu ô có màu địa điểm: giữ nguyên kiểu gốc, thêm nền nhạt + cạnh trái đậm (như vạch màu trên web).
+  const locationStyleCache = new Map();
+  function locationStyle(base, locIndex){
+    const idx = Number(locIndex);
+    if(!base || !Number.isInteger(idx) || idx < 0) return base;
+    let byBase = locationStyleCache.get(base);
+    if(!byBase){ byBase = new Map(); locationStyleCache.set(base, byBase); }
+    if(byBase.has(idx)) return byBase.get(idx);
+    const color = LOCATION_COLORS[idx % LOCATION_COLORS.length];
+    const next = JSON.parse(JSON.stringify(base));
+    next.fill = {patternType:'solid', fgColor:{rgb:color.fill}};
+    next.border = Object.assign({}, next.border || border('thin'), {left:{style:'thick', color:{rgb:color.edge}}});
+    byBase.set(idx, next);
+    return next;
+  }
+
+  // Chú thích màu: chia cột [firstCol..lastCol] cho từng địa điểm (gộp ô), in tên địa điểm trên màu của nó.
+  function applyLocationLegend(ws, row, firstCol, lastCol, locations){
+    if(!Array.isArray(locations) || locations.length < 2) return;
+    const span = lastCol - firstCol + 1;
+    if(span <= 0) return;
+    const count = Math.min(locations.length, span);
+    const per = Math.floor(span / count);
+    for(let i = 0; i < count; i++){
+      const start = firstCol + i * per;
+      const end = i === count - 1 ? lastCol : start + per - 1;
+      const st = locationStyle(styles.locationLegend, i);
+      if(end > start) merge(ws, row, start, row, end);
+      setCell(ws, row, start, locations[i], st);
+      for(let c = start + 1; c <= end; c++) setCell(ws, row, c, '', st);
+    }
+  }
 
   function schoolClassTitle(data){
     const number = safe(data?.scheduleNumber || getScheduleNumber()) || '1';
@@ -768,7 +1089,11 @@
     setCell(ws, top + 1, 1, 'Buổi', styles.schoolClassHeader);
     setCell(ws, top + 1, 2, 'Tiết', styles.schoolClassHeader);
     for(let i = 0; i < slotCount; i++){
-      setCell(ws, top + 1, 3 + i, chunk[i]?.className || '', styles.schoolClassHeader);
+      setCell(ws, top + 1, 3 + i, chunk[i]?.className || '', locationStyle(styles.schoolClassHeader, chunk[i]?.classLoc));
+    }
+    const legendLocations = (chunk || []).find(p => Array.isArray(p?.locations))?.locations;
+    if(legendLocations && lastCol > titleLastCol){
+      applyLocationLegend(ws, top, titleLastCol + 1, Math.min(lastCol, titleLastCol + legendLocations.length), legendLocations);
     }
 
     const dayLabels = chunk[0]?.dayLabels?.length ? chunk[0].dayLabels.slice(0, 6) : ['2','3','4','5','6','7'];
@@ -785,8 +1110,10 @@
         setCell(ws, dayTop + 5 + period, 2, period + 1, styles.schoolClassLabel);
         for(let classIndex = 0; classIndex < slotCount; classIndex++){
           const payload = chunk[classIndex];
-          setCell(ws, dayTop + period, 3 + classIndex, payload?.morning?.[period]?.[dayIndex] || '', styles.schoolClassCell);
-          setCell(ws, dayTop + 5 + period, 3 + classIndex, payload?.afternoon?.[period]?.[dayIndex] || '', styles.schoolClassCell);
+          const am = payload?.morning?.[period]?.[dayIndex] || '';
+          const pm = payload?.afternoon?.[period]?.[dayIndex] || '';
+          setCell(ws, dayTop + period, 3 + classIndex, am, am ? locationStyle(styles.schoolClassCell, payload?.morningLoc?.[period]?.[dayIndex]) : styles.schoolClassCell);
+          setCell(ws, dayTop + 5 + period, 3 + classIndex, pm, pm ? locationStyle(styles.schoolClassCell, payload?.afternoonLoc?.[period]?.[dayIndex]) : styles.schoolClassCell);
         }
       }
     });
@@ -858,10 +1185,13 @@
       setCell(ws, top + 7 + i, left + 2, `S${i + 1}`, styles.tableTiny);
       setCell(ws, top + 12 + i, left + 2, `C${i + 1}`, styles.tableTiny);
       for(let d = 0; d < 6; d++){
-        setCell(ws, top + 7 + i, left + 3 + d, data.morning?.[i]?.[d] || '', styles.tableTiny);
-        setCell(ws, top + 12 + i, left + 3 + d, data.afternoon?.[i]?.[d] || '', styles.tableTiny);
+        const am = data.morning?.[i]?.[d] || '';
+        const pm = data.afternoon?.[i]?.[d] || '';
+        setCell(ws, top + 7 + i, left + 3 + d, am, am ? locationStyle(styles.tableTiny, data.morningLoc?.[i]?.[d]) : styles.tableTiny);
+        setCell(ws, top + 12 + i, left + 3 + d, pm, pm ? locationStyle(styles.tableTiny, data.afternoonLoc?.[i]?.[d]) : styles.tableTiny);
       }
     }
+    applyLocationLegend(ws, top + 5, left + 3, left + 8, data.locations);
   }
 
   function cardPosition(index){
@@ -940,10 +1270,13 @@
       setCell(ws, top + 8 + i, left + 1, i + 1, styles.teacher1Table);
       setCell(ws, top + 13 + i, left + 1, i + 1, styles.teacher1Table);
       for(let d = 0; d < 6; d++){
-        setCell(ws, top + 8 + i, left + 2 + d, data.morning?.[i]?.[d] || '', styles.teacher1Table);
-        setCell(ws, top + 13 + i, left + 2 + d, data.afternoon?.[i]?.[d] || '', styles.teacher1Table);
+        const am = data.morning?.[i]?.[d] || '';
+        const pm = data.afternoon?.[i]?.[d] || '';
+        setCell(ws, top + 8 + i, left + 2 + d, am, am ? locationStyle(styles.teacher1Table, data.morningLoc?.[i]?.[d]) : styles.teacher1Table);
+        setCell(ws, top + 13 + i, left + 2 + d, pm, pm ? locationStyle(styles.teacher1Table, data.afternoonLoc?.[i]?.[d]) : styles.teacher1Table);
       }
     }
+    applyLocationLegend(ws, top + 6, left + 2, left + 7, data.locations);
   }
 
   function teacher1CardPosition(index){
@@ -979,12 +1312,173 @@
     return {wb, pageCount, pageRows: TEACHER1_PAGE_ROWS, orientation:'landscape', scale:100};
   }
 
-  function buildRowBreaksXml(pageCount, pageRows){
+  // Kiểu ô theo màu phòng (cùng màu vạch cạnh phải trên web): nền nhạt, tên phòng thêm cạnh trái đậm.
+  const roomStyleCache = new Map();
+  function roomStyle(base, color, withEdge){
+    if(!base || !color) return base;
+    const key = `${color.edge}|${withEdge ? 1 : 0}`;
+    let byBase = roomStyleCache.get(base);
+    if(!byBase){ byBase = new Map(); roomStyleCache.set(base, byBase); }
+    if(byBase.has(key)) return byBase.get(key);
+    const next = JSON.parse(JSON.stringify(base));
+    next.fill = {patternType:'solid', fgColor:{rgb:color.fill}};
+    if(withEdge) next.border = Object.assign({}, next.border || border('thin'), {left:{style:'thick', color:{rgb:color.edge}}});
+    byBase.set(key, next);
+    return next;
+  }
+
+  function roomColorOf(data){
+    if(data?.missing) return ROOM_MISSING_COLOR;
+    const idx = Number(data?.colorIndex);
+    return Number.isInteger(idx) && idx >= 0 ? ROOM_COLORS[idx % ROOM_COLORS.length] : null;
+  }
+
+  function roomBlockTitle(data){
+    const name = data?.missing ? `${safe(data.groupName) || 'Phòng bộ môn'}: tiết chưa có phòng` : safe(data?.roomName);
+    return [
+      name,
+      data?.missing ? '' : safe(data?.groupName),
+      safe(data?.location),
+      `${Number(data?.periodCount || 0)} tiết`
+    ].filter(Boolean).join('  ·  ');
+  }
+
+  function applyRoomPageHead(ws, data, top, lastCol){
+    const lines = [
+      [schoolTitle(data?.schoolName), styles.roomSchool],
+      ['THỜI KHÓA BIỂU THEO PHÒNG', styles.roomTitle],
+      [`TKB số: ${safe(data?.scheduleNumber)}  (Từ ${safe(data?.effectiveDate)})`, styles.roomSub]
+    ];
+    lines.forEach(([text, st], i) => {
+      merge(ws, top + i, 0, top + i, lastCol);
+      setCell(ws, top + i, 0, text, st);
+      for(let c = 1; c <= lastCol; c++) setCell(ws, top + i, c, '', st);
+    });
+    for(let c = 0; c <= lastCol; c++) setCell(ws, top + lines.length, c, '', styles.roomGap);
+  }
+
+  // Số dòng chữ của một ô: ô ngắn một dòng (co chữ cho vừa), ô dài/nhiều mục xuống dòng theo bề rộng cột.
+  function roomTextLines(text){
+    const parts = String(text || '').split('\n');
+    if(parts.length === 1 && parts[0].length <= ROOM_LONG_TEXT) return 1;
+    return parts.reduce((sum, part) => sum + Math.max(1, Math.ceil(part.length / ROOM_WRAP_CHARS)), 0);
+  }
+
+  // Chiều cao 13 hàng của một bảng phòng: tên phòng, tiêu đề cột, 5 tiết sáng, 5 tiết chiều, dòng cách.
+  function roomBlockHeights(data){
+    const lesson = rows => Array.from({length: 5}, (_unused, i) => {
+      const lines = Math.max(1, ...Array.from({length: 6}, (_u, d) => roomTextLines(rows?.[i]?.[d])));
+      return lines > 1 ? Math.max(ROOM_LESSON_HEIGHT, lines * ROOM_LINE_HEIGHT + 2) : ROOM_LESSON_HEIGHT;
+    });
+    return [ROOM_NAME_HEIGHT, ROOM_HEADER_HEIGHT].concat(lesson(data?.morning), lesson(data?.afternoon), [ROOM_GAP_HEIGHT]);
+  }
+
+  function applyRoomBlock(ws, data, top, lastCol){
+    const color = roomColorOf(data);
+    const nameStyle = roomStyle(styles.roomName, color, true);
+    merge(ws, top, 0, top, lastCol);
+    setCell(ws, top, 0, roomBlockTitle(data), nameStyle);
+    for(let c = 1; c <= lastCol; c++) setCell(ws, top, c, '', nameStyle);
+
+    setCell(ws, top + 1, 0, 'Buổi', styles.roomHeader);
+    setCell(ws, top + 1, 1, 'Tiết', styles.roomHeader);
+    for(let d = 0; d < 6; d++) setCell(ws, top + 1, 2 + d, data?.dayLabels?.[d] || '', styles.roomHeader);
+
+    merge(ws, top + 2, 0, top + 6, 0);
+    merge(ws, top + 7, 0, top + 11, 0);
+    const cellStyle = (text, clash) => {
+      if(!text) return styles.roomCell;
+      if(clash) return styles.roomCellClash;
+      return roomStyle(roomTextLines(text) > 1 ? styles.roomCellWrap : styles.roomCell, color, false);
+    };
+    for(let i = 0; i < 5; i++){
+      setCell(ws, top + 2 + i, 0, i ? '' : 'Sáng', styles.roomSession);
+      setCell(ws, top + 7 + i, 0, i ? '' : 'Chiều', styles.roomSession);
+      setCell(ws, top + 2 + i, 1, i + 1, styles.roomLabel);
+      setCell(ws, top + 7 + i, 1, i + 1, styles.roomLabel);
+      for(let d = 0; d < 6; d++){
+        const am = data?.morning?.[i]?.[d] || '';
+        const pm = data?.afternoon?.[i]?.[d] || '';
+        setCell(ws, top + 2 + i, 2 + d, am, cellStyle(am, data?.morningClash?.[i]?.[d]));
+        setCell(ws, top + 7 + i, 2 + d, pm, cellStyle(pm, data?.afternoonClash?.[i]?.[d]));
+      }
+    }
+    for(let c = 0; c <= lastCol; c++) setCell(ws, top + 12, c, '', styles.roomGap);
+  }
+
+  // Xếp các bảng phòng nối nhau; sang trang khi đủ ROOMS_PER_PAGE phòng hoặc trang sắp quá chiều cao giấy.
+  function buildRoomWorkbook(payloads){
+    if(!window.XLSX) throw new Error('Chưa tải được thư viện Excel XLSX.');
+    const data = Array.isArray(payloads) ? payloads : [payloads].filter(Boolean);
+    const lastCol = ROOM_COL_WIDTHS.length - 1;
+    const ws = {};
+    const heights = [];
+    const rowBreaks = [];
+    const sum = list => list.reduce((total, value) => total + value, 0);
+    let row = 0;
+    let pageHeight = 0;
+    let onPage = 0;
+    const startPage = payload => {
+      applyRoomPageHead(ws, payload, row, lastCol);
+      ROOM_HEAD_HEIGHTS.forEach(hpt => heights.push(hpt));
+      row += ROOM_HEAD_HEIGHTS.length;
+      pageHeight = sum(ROOM_HEAD_HEIGHTS);
+      onPage = 0;
+    };
+    data.forEach((payload, index) => {
+      const blockHeights = roomBlockHeights(payload);
+      const blockHeight = sum(blockHeights);
+      if(index === 0){
+        startPage(payload);
+      }else if(onPage >= ROOMS_PER_PAGE || pageHeight + blockHeight > ROOM_PAGE_HEIGHT){
+        rowBreaks.push(row);
+        startPage(payload);
+      }
+      applyRoomBlock(ws, payload, row, lastCol);
+      blockHeights.forEach(hpt => heights.push(hpt));
+      row += blockHeights.length;
+      pageHeight += blockHeight;
+      onPage++;
+    });
+    if(!data.length) startPage({});
+
+    ws['!ref'] = XLSX.utils.encode_range({s:{r:0,c:0}, e:{r:Math.max(0, row - 1), c:lastCol}});
+    ws['!cols'] = ROOM_COL_WIDTHS.map(wch => ({wch}));
+    ws['!rows'] = heights.map(hpt => ({hpt}));
+    ws['!margins'] = {left:0.25, right:0.25, top:0.35, bottom:0.3, header:0, footer:0};
+    ws['!views'] = [{showGridLines:false}];
+    ws['!pageSetup'] = {paperSize:9, orientation:'portrait', fitToWidth:1, fitToHeight:0};
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, ROOM_SHEET_NAME);
+    return {
+      wb,
+      pageCount: rowBreaks.length + 1,
+      pageRows: row,
+      orientation: 'portrait',
+      print: Object.assign({}, ROOM_PRINT, {rowBreaks}),
+      shrinkToFit: true
+    };
+  }
+
+  // Thư viện xlsx-js-style không ghi shrinkToFit ("co chữ cho vừa ô") -> thêm thẳng vào styles.xml
+  // cho mọi kiểu ô không xuống dòng. Chỉ TKB phòng dùng (built.shrinkToFit).
+  function addShrinkToFitXml(xml){
+    return String(xml || '').replace(/<alignment\b([^>]*?)\/>/g, (tag, attrs) =>
+      /\b(wrapText|shrinkToFit)=/.test(attrs) ? tag : `<alignment${attrs} shrinkToFit="1"/>`);
+  }
+
+  // explicitRows (TKB phòng): các trang cao thấp khác nhau nên chỉ rõ hàng đầu của từng trang sau.
+  function buildRowBreaksXml(pageCount, pageRows, explicitRows){
     const count = Math.max(1, Number(pageCount || 1));
     const rowsPerPage = Math.max(1, Number(pageRows || PAGE_ROWS));
     const breaks = [];
-    for(let page = 1; page < count; page++){
-      breaks.push(`<brk id="${page * rowsPerPage}" max="16383" man="1"/>`);
+    if(Array.isArray(explicitRows)){
+      explicitRows.forEach(row => breaks.push(`<brk id="${Number(row)}" max="16383" man="1"/>`));
+    }else{
+      for(let page = 1; page < count; page++){
+        breaks.push(`<brk id="${page * rowsPerPage}" max="16383" man="1"/>`);
+      }
     }
     if(!breaks.length) return '';
     return `<rowBreaks count="${breaks.length}" manualBreakCount="${breaks.length}">${breaks.join('')}</rowBreaks>`;
@@ -1045,14 +1539,18 @@
       footer: '0'
     };
     const paperSize = String(printConfig.paperSize || 9);
-    const centerBlock = printConfig.centered === false ? '' : '<printOptions horizontalCentered="1" verticalCentered="1"/>';
+    const centerBlock = printConfig.centered === false
+      ? ''
+      : printConfig.centered === 'horizontal'
+        ? '<printOptions horizontalCentered="1"/>'
+        : '<printOptions horizontalCentered="1" verticalCentered="1"/>';
     const block = [
       centerBlock,
       `<pageMargins left="${margins.left}" right="${margins.right}" top="${margins.top}" bottom="${margins.bottom}" header="${margins.header}" footer="${margins.footer}"/>`,
       useFixedScale
         ? `<pageSetup paperSize="${paperSize}" orientation="${orientation === 'landscape' ? 'landscape' : 'portrait'}"/>`
         : `<pageSetup paperSize="${paperSize}" orientation="${orientation === 'landscape' ? 'landscape' : 'portrait'}" fitToWidth="1" fitToHeight="0"/>`,
-      buildRowBreaksXml(pageCount, pageRows)
+      buildRowBreaksXml(pageCount, pageRows, printConfig.rowBreaks)
     ].join('');
     const markers = ['<headerFooter', '<drawing', '<legacyDrawing', '<tableParts', '<extLst'];
     for(const marker of markers){
@@ -1126,8 +1624,10 @@
       ? buildTeacher1Workbook(data)
       : options?.template === 'school-class'
         ? buildSchoolClassWorkbook(data)
-        : buildWorkbook(data);
-    const {wb, pageCount, pageRows, orientation, scale, print, printArea} = built;
+        : options?.template === 'rooms'
+          ? buildRoomWorkbook(data)
+          : buildWorkbook(data);
+    const {wb, pageCount, pageRows, orientation, scale, print, printArea, shrinkToFit} = built;
     const writeOptions = window.TKBExcelStyle?.writeOptions
       ? window.TKBExcelStyle.writeOptions({bookSST:true})
       : {compression:true, cellStyles:true, bookSST:true};
@@ -1146,6 +1646,10 @@
       const patched = patchWorksheetXml(xml, pageCount, pageRows, orientation, scale, print);
       assertWorksheetXml(patched);
       zip.file(path, patched);
+    }
+    if(shrinkToFit){
+      const stylesFile = zip.file('xl/styles.xml');
+      if(stylesFile) zip.file('xl/styles.xml', addShrinkToFitXml(await stylesFile.async('string')));
     }
     if(printArea){
       const workbookFile = zip.file('xl/workbook.xml');
@@ -1290,6 +1794,12 @@
     }
   };
 
+  // 01/10: cho test Node kiểm màu địa điểm (e2e_tests/excel_location_colors_node.test.js).
+  window.__tkbExcelLocationInternals = {
+    exportLocations, locationIndexFor, locationStyle, schoolClassSchedulePayload, teacherSchedulePayload,
+    schoolTeacherSchedulePayload, teacherTemplate1Payload, buildTeacher1Workbook, buildWorkbook, buildSchoolClassWorkbook
+  };
+
   window.exportSchoolClassTKBExcel = async function(){
     try{
       setStatus('Đang xuất Excel toàn trường theo lớp học...', 'info');
@@ -1350,6 +1860,33 @@
       return result;
     }catch(err){
       const msg = err && (err.message || String(err)) || 'Không xuất được file Excel mẫu 1 giáo viên.';
+      setStatus(msg, 'error');
+      alert(msg);
+      return null;
+    }
+  };
+
+  // Cho test Node (e2e_tests/excel_room_export_node.test.js).
+  window.__tkbExcelRoomInternals = { allRoomSchedulePayloads, buildRoomWorkbook, buildXlsxBlob };
+
+  // In TKB -> "TKB phòng". Chỉ đọc lịch để xuất, không lưu kho.
+  window.exportRoomTKBExcel = async function(){
+    try{
+      setStatus('Đang xuất Excel TKB phòng...', 'info');
+      const payloads = allRoomSchedulePayloads();
+      const blob = await buildXlsxBlob(payloads, {template:'rooms'});
+      const result = await saveXlsx(blob, fileDateToday(), 'phong');
+      if(result?.canceled){
+        setStatus('Đã hủy lưu file Excel TKB phòng.', 'info');
+        return result;
+      }
+      const where = result.path || result.fileName || '';
+      const roomCount = payloads.filter(p => !p.missing).length;
+      const missing = payloads.filter(p => p.missing).reduce((sum, p) => sum + Number(p.periodCount || 0), 0);
+      setStatus(`Đã xuất Excel TKB ${roomCount} phòng${missing ? ` (còn ${missing} tiết chưa có phòng)` : ''}: ${where}`, missing ? 'warning' : 'ok');
+      return result;
+    }catch(err){
+      const msg = err && (err.message || String(err)) || 'Không xuất được Excel TKB phòng.';
       setStatus(msg, 'error');
       alert(msg);
       return null;
