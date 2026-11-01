@@ -1590,9 +1590,17 @@
     "#btnSolverTarget.agent-toggle[data-target=\"local\"][data-local-online=\"false\"]{background:#fffbeb;border-color:#fbbf24;color:#b45309}",
     "#btnSolverTarget.agent-toggle[data-target=\"local\"][data-local-online=\"false\"]::before{background:#f59e0b}",
     "#btnSolverTarget.agent-toggle:focus-visible{outline:2px solid #0ea5e9;outline-offset:2px}",
+    // 01/11: o ⏱ thoi gian moi luot (canh menu Toi uu).
+    ".toolbar-actions > .tkb-solve-budget{display:inline-flex;align-items:center;gap:3px;height:36px;min-height:36px;",
+    "flex:0 0 auto;margin:0;padding:0 0 0 2px;font-size:12px;color:#64748b}",
+    ".toolbar-actions > .tkb-solve-budget > .tkb-solve-budget-icon{font-size:14px;line-height:1}",
+    ".toolbar-actions > .tkb-solve-budget > select{height:36px;min-height:36px;box-sizing:border-box;padding:0 4px;",
+    "border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#334155;font-size:12px;font-weight:600;cursor:pointer}",
+    ".toolbar-actions > .tkb-solve-budget > select:hover,.toolbar-actions > .tkb-solve-budget > select:focus-visible{",
+    "border-color:#94a3b8;background:#f8fafc;color:#0f172a;outline:none}",
     // Cung dieu kien voi luoi thanh cong cu dien thoai (sapxep.html): o do nhom RB/Home la display:contents.
     "@media (max-width:900px),(hover:none) and (pointer:coarse),(orientation:landscape) and (max-height:540px) and (any-pointer:coarse)",
-    "{#btnSolverTarget.agent-toggle{display:none!important}}",
+    "{#btnSolverTarget.agent-toggle,.toolbar-actions > .tkb-solve-budget{display:none!important}}",
     "#tkbAgentAnnounce{position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;",
     "background:rgba(15,23,42,.5);padding:16px}",
     "#tkbAgentAnnounce[hidden]{display:none}",
@@ -2082,6 +2090,74 @@
         syncSolverTargetUi();
       }).catch(() => {});
     });
+  }
+
+  /* 01/11 (chu du an: "them yeu to thoi gian: mac dinh 2 phut, tuy chon tu 1 den 3 phut"): o ⏱ ngay
+     sau menu Toi uu tren tkbcherry.com = thoi gian MOI luot Cherry va Toi uu (Agent lan may chu; truoc
+     day Cherry 180 s, Toi uu 120 s co dinh). Ban Netlify co o rieng (overlay local-planner.js, cung
+     dat hai bien duoi) nen chi gan o trang co may chu. Dien thoai an o (luoi nut) nhung van 2 phut. */
+  const SOLVE_BUDGET_KEY = "TKB_ENGINE_BUDGET_SECONDS_V1";
+  const SOLVE_BUDGET_DEFAULT = 120;
+  const SOLVE_BUDGET_OPTIONS = [[60, "1 phút"], [120, "2 phút"], [180, "3 phút"]];
+
+  function normalizeSolveBudget(value){
+    const n = Math.round(Number(value) || 0);
+    if(!(n > 0)) return SOLVE_BUDGET_DEFAULT;
+    if(n <= 90) return 60;
+    if(n <= 150) return 120;
+    return 180;
+  }
+
+  function readSolveBudget(){
+    try{ return normalizeSolveBudget(window.localStorage?.getItem(SOLVE_BUDGET_KEY)); }catch(_){ return SOLVE_BUDGET_DEFAULT; }
+  }
+
+  function applySolveBudget(seconds, persist){
+    const n = normalizeSolveBudget(seconds);
+    window.__TKB_ENGINE_BUDGET_SECONDS = n;
+    window.__TKB_ENGINE_FOCUS_BUDGET_SECONDS = n;
+    if(persist){
+      try{ window.localStorage?.setItem(SOLVE_BUDGET_KEY, String(n)); }catch(_){ }
+    }
+    const select = typeof document !== "undefined" ? document.getElementById("tkbSolveBudget") : null;
+    if(select){
+      select.value = String(n);
+      select.title = `Thời gian mỗi lượt Cherry / Tối ưu: ${n / 60} phút`;
+    }
+    return n;
+  }
+
+  function initSolveBudgetUi(){
+    if(typeof document === "undefined" || !agentPage()) return;
+    applySolveBudget(readSolveBudget(), false);
+    if(document.getElementById("tkbSolveBudget")) return;
+    const anchor = document.getElementById("plannerTestWrap") || document.getElementById("btnEngineCherry");
+    if(!anchor || typeof anchor.insertAdjacentElement !== "function") return;
+    ensureSolverTargetCss();
+    const wrap = document.createElement("label");
+    wrap.id = "tkbSolveBudgetWrap";
+    wrap.className = "tkb-solve-budget";
+    wrap.setAttribute("aria-label", "Thời gian mỗi lượt Cherry / Tối ưu");
+    const icon = document.createElement("span");
+    icon.className = "tkb-solve-budget-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = "⏱";
+    const select = document.createElement("select");
+    select.id = "tkbSolveBudget";
+    for(const [value, label] of SOLVE_BUDGET_OPTIONS){
+      const option = document.createElement("option");
+      option.value = String(value);
+      option.textContent = label;
+      select.appendChild(option);
+    }
+    wrap.appendChild(icon);
+    wrap.appendChild(select);
+    anchor.insertAdjacentElement("afterend", wrap);
+    select.addEventListener("change", () => {
+      const n = applySolveBudget(select.value, true);
+      setStatus(`Mỗi lượt Cherry / Tối ưu chạy ${n / 60} phút — bấm Dừng để lấy kết quả tốt nhất sớm hơn.`, "info");
+    });
+    applySolveBudget(readSolveBudget(), false);
   }
 
   function initSolverTargetUi(){
@@ -23667,6 +23743,7 @@
     installOptimizationLockSaveHook();
     initSolverPresetUi();
     initCustomSolveDurationUi();
+    initSolveBudgetUi();
     initSolverTargetUi();
     syncOptimizationLockState();
     if(window.TKBRustAPI){
