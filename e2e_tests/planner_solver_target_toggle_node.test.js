@@ -49,6 +49,7 @@ function makeNode(id, nodes, tag = ""){
     removeAttribute(name){ delete this.attributes[name]; },
     addEventListener(type, fn){ listeners[type] = fn; },
     click(){ return listeners.click && listeners.click(); },
+    fire(type){ return listeners[type] && listeners[type]({type}); },
     appendChild(child){ this.children.push(child); if(nodes) registerTree(nodes, child); return child; },
     remove(){}
   };
@@ -63,7 +64,7 @@ function makeDocument({toolbarGroup = true} = {}){
   nodes.set("btnEngineCherry", cherry);
   // 31/10: nhom RB / Home cua thanh cong cu (RB chi hien cho superadmin nhung van co trong DOM).
   if(toolbarGroup){
-    for(const id of ["btnConstraintAudit", "btnHome"]){
+    for(const id of ["plannerTestWrap", "btnConstraintAudit", "btnHome"]){
       const node = makeNode(id, nodes, "button");
       anchor(node);
       nodes.set(id, node);
@@ -85,6 +86,10 @@ function makeDocument({toolbarGroup = true} = {}){
     documentElement:{appendChild(child){ return child; }},
     body:{appendChild(child){ frames.push(child); registerTree(nodes, child); return child; }}
   };
+}
+
+function switchInserted(document){
+  return document.inserted.filter(x => x.el && x.el.id === "btnSolverTarget");
 }
 
 function loadBridge({storage, fetchImpl, navigator, authHeaders, noServer, toolbarGroup} = {}){
@@ -199,7 +204,7 @@ test("Mac và điện thoại luôn giải trên máy chủ, không có công t�
     assert.equal(await hooks.rustApiBase(), SITE);
     hooks.initSolverTargetUi();
     assert.equal(document.getElementById("btnSolverTarget"), null);
-    assert.equal(document.inserted.length, 0);
+    assert.equal(switchInserted(document).length, 0);
     assert.equal(hooks.showAgentAnnouncement(), null, "không mời tính năng không dùng được");
     assert.ok(calls.every(c => !c.url.startsWith(LOCAL)), JSON.stringify(calls.map(c => c.url)));
   }
@@ -229,9 +234,9 @@ test("công tắc Agent gắn ngay bên trái nút RB, bật mặc định, bấ
   const storage = memoryStorage({TKB_AGENT_ANNOUNCE_V2:"1"});
   const {hooks, document, statuses} = loadBridge({storage, fetchImpl:health});
   hooks.initSolverTargetUi();
-  assert.equal(document.inserted.length, 1);
-  assert.equal(document.inserted[0].anchor, "btnConstraintAudit");
-  assert.equal(document.inserted[0].where, "beforebegin");
+  assert.equal(switchInserted(document).length, 1);
+  assert.equal(switchInserted(document)[0].anchor, "btnConstraintAudit");
+  assert.equal(switchInserted(document)[0].where, "beforebegin");
   const btn = document.getElementById("btnSolverTarget");
   assert.ok(btn);
   assert.equal(btn.textContent, "Agent");
@@ -252,16 +257,16 @@ test("công tắc Agent gắn ngay bên trái nút RB, bật mặc định, bấ
   assert.equal(statuses.at(-1).type, "success", "Cherry.exe đang chạy -> báo sẵn sàng");
   assert.equal(document.getElementById("tkbCherryLocalDot").dataset.state, "online");
   hooks.initSolverTargetUi();
-  assert.equal(document.inserted.length, 1, "không gắn công tắc hai lần");
+  assert.equal(switchInserted(document).length, 1, "không gắn công tắc hai lần");
 });
 
 test("trang không có nhóm RB / Home: công tắc Agent về ngay sau nút Cherry", () => {
   const storage = memoryStorage({TKB_AGENT_ANNOUNCE_V2:"1"});
   const {hooks, document} = loadBridge({storage, fetchImpl:health, toolbarGroup:false});
   hooks.initSolverTargetUi();
-  assert.equal(document.inserted.length, 1);
-  assert.equal(document.inserted[0].anchor, "btnEngineCherry");
-  assert.equal(document.inserted[0].where, "afterend");
+  assert.equal(switchInserted(document).length, 1);
+  assert.equal(switchInserted(document)[0].anchor, "btnEngineCherry");
+  assert.equal(switchInserted(document)[0].where, "afterend");
 });
 
 test("bật Agent khi Cherry.exe chưa chạy: chỉ dò nhanh, không tự mở ứng dụng, công tắc chuyển màu cam", async () => {
@@ -376,6 +381,41 @@ test("Agent: chờ hết giờ mà không thấy Cherry Agent — mới yêu c�
   hooks.stopLocalInstallPolling();
 });
 
+test("ô ⏱ trên tkbcherry.com: ngay sau menu Tối ưu, mặc định 2 phút cho cả Cherry và Tối ưu, chọn 1–3 phút và nhớ", () => {
+  const storage = memoryStorage({TKB_AGENT_ANNOUNCE_V2:"1"});
+  const {document, window, statuses} = loadBridge({storage, fetchImpl:health});
+  const placed = document.inserted.filter(x => x.el && x.el.id === "tkbSolveBudgetWrap");
+  assert.equal(placed.length, 1);
+  assert.equal(placed[0].anchor, "plannerTestWrap");
+  assert.equal(placed[0].where, "afterend");
+  const select = document.getElementById("tkbSolveBudget");
+  assert.deepEqual(select.children.map(o => [o.value, o.textContent]), [["60", "1 phút"], ["120", "2 phút"], ["180", "3 phút"]]);
+  assert.equal(window.__TKB_ENGINE_BUDGET_SECONDS, 120);
+  assert.equal(window.__TKB_ENGINE_FOCUS_BUDGET_SECONDS, 120);
+  assert.equal(select.value, "120");
+  select.value = "180";
+  select.fire("change");
+  assert.equal(window.__TKB_ENGINE_BUDGET_SECONDS, 180);
+  assert.equal(window.__TKB_ENGINE_FOCUS_BUDGET_SECONDS, 180);
+  assert.equal(storage.getItem("TKB_ENGINE_BUDGET_SECONDS_V1"), "180");
+  assert.match(statuses.at(-1).msg, /3 phút/);
+
+  const again = loadBridge({storage, fetchImpl:health});
+  assert.equal(again.window.__TKB_ENGINE_BUDGET_SECONDS, 180, "mở lại trang vẫn nhớ 3 phút");
+  assert.equal(again.document.getElementById("tkbSolveBudget").value, "180");
+});
+
+test("ô ⏱: giá trị lạ làm tròn về 1/2/3 phút; Mac cũng có ô (xếp trên máy chủ); bản Netlify không gắn (có ô riêng)", () => {
+  const odd = loadBridge({storage:memoryStorage({TKB_ENGINE_BUDGET_SECONDS_V1:"45"}), fetchImpl:health});
+  assert.equal(odd.window.__TKB_ENGINE_BUDGET_SECONDS, 60);
+  const mac = loadBridge({fetchImpl:health, navigator:MAC});
+  assert.ok(mac.document.getElementById("tkbSolveBudget"));
+  assert.equal(mac.window.__TKB_ENGINE_BUDGET_SECONDS, 120);
+  const netlify = loadBridge({noServer:true, fetchImpl:health});
+  assert.equal(netlify.document.getElementById("tkbSolveBudget"), null);
+  assert.equal(netlify.window.__TKB_ENGINE_BUDGET_SECONDS, undefined);
+});
+
 test("hộp cài trên tkbcherry.com: tải Cherry.exe từ trang Netlify, có nút Tắt Agent xếp luôn trên máy chủ", () => {
   const ran = [];
   const {hooks, document, window} = loadBridge({fetchImpl:health});
@@ -465,7 +505,7 @@ test("bản web không đăng nhập (Netlify): chỉ một nút Cherry + chấm
   assert.doesNotMatch(hooks.noSolverBackendMessage(), /nút ▶/, "máy Windows không mời xếp trên trình duyệt");
   hooks.initSolverTargetUi();
   assert.equal(document.getElementById("btnSolverTarget"), null, "không còn viên Máy chủ / Máy này");
-  assert.equal(document.inserted.length, 0);
+  assert.equal(switchInserted(document).length, 0);
   await new Promise(r => setTimeout(r, 20));
   const dot = document.getElementById("tkbCherryLocalDot");
   assert.ok(dot, "chấm trạng thái gắn trên nút Cherry");
