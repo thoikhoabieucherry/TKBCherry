@@ -21,6 +21,14 @@ test("mobile login brand aligns logo, copy, and illustration on one center axis"
   assert.match(mobile, /\.auth-home \.auth-brand-visual\s*\{[^}]*margin-left:\s*auto;[^}]*margin-right:\s*auto;[^}]*transform:\s*none;/s);
 });
 
+test("homepage title width never depends on ch units", () => {
+  // Gradient text paints only inside its box, and ch stays measured on the fallback
+  // font on a first visit: the title then lost its last letter ("Cherry Schedule").
+  const rules = [...css.matchAll(/\.auth-home \.auth-panel-brand h1\s*\{[^}]*\}/g)].map(m => m[0]);
+  assert.ok(rules.length >= 2, "homepage title rules are missing");
+  for (const rule of rules) assert.doesNotMatch(rule, /max-width:\s*[\d.]+ch/);
+});
+
 test("desktop login illustration keeps its intentional offset", () => {
   const mobileStart = css.indexOf("@media (max-width: 899px)");
   assert.match(css.slice(0, mobileStart), /\.auth-home \.auth-brand-visual\s*\{[^}]*transform:\s*translateX\(50px\);/s);
