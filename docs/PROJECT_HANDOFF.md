@@ -9,7 +9,7 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
-## 2026-11-02 TRANG CHỦ TRỞ LẠI TRANG ĐĂNG NHẬP GỌN (như trước 07/10) — ĐÃ DEPLOY; VÁ TIÊU ĐỀ BỊ CẮT CHỜ DEPLOY
+## 2026-11-02 TRANG CHỦ TRỞ LẠI TRANG ĐĂNG NHẬP GỌN (như trước 07/10) — ĐÃ DEPLOY (cả vá tiêu đề bị cắt)
 
 - **Chủ dự án**: "tôi đã thiết kế trang chủ để xin startup của claude ko được, giờ trang chủ rối quá thiết kế lại cho tôi như cũ cũng được".
 - **`web/index.html`** = bản `9637942` (trước landing 07/10: logo + khẩu hiệu + hình minh hoạ bên trái, thẻ đăng nhập bên phải, chân trang
@@ -44,7 +44,9 @@
   (1366, 1920) không lộ. Có sẵn từ 08/2026; landing 07/10 che đi bằng `.auth-landing .auth-panel-brand h1` trong `public-site.css`, khôi phục trang cũ làm nó lộ lại.
   **Vá**: `max-width: none` (h1 vốn `nowrap` + `width: max-content`, rule chỉ áp `.auth-home` = trang chủ, không đụng school-portal/super-admin, `?v=` không cần đổi vì static `no-store`).
   Sau vá, cold load bản local: 1100/1366/1536/1920 khung = chữ. Test mới trong `auth_mobile_layout_node`: "homepage title width never depends on ch units" (bắt đúng CSS cũ, pass CSS mới).
-  **CHỜ DEPLOY**: `! python scratch/homepage-deploy/run2.py` (preflight + `deploy homepage-title-20261102 --no-restart web/auth.css`).
+  **ĐÃ DEPLOY 02/11** (chủ dự án chạy `!`): `python scratch/homepage-deploy/run2.py`, `web/auth.css`, `--no-restart`, backup `/root/tkb-backups/homepage-title-20261102/`,
+  remote trước `5f0e12ec…` (= local trước khi vá), live sau `6aab167aa96e5281` khớp. Cold load live (hồ sơ mới, tắt cache): 1100/1366/1536/1920 khung = chữ, `max-width: none`;
+  chạy lại `live_check.mjs` không đổi; `/school-portal`, `/super-admin`, `/api/health` 200. Rollback `python deploy.py files rollback homepage-title-20261102 web/auth.css` (có restart).
 - **Handoff**: chuyển 28 mục tháng 10 sang `docs/archive/PROJECT_HANDOFF_2026-10-01_2026-10-31.md`, gồm mục 26/10 trước đó chưa từng được commit.
 - **Còn trong cây làm việc** (có từ 26/10, không phải việc phiên này, chưa commit): `.gitignore`, `AGENTS.md`, `tools/cloud-run/*`,
   `web/pages/sapxep.html`, `web/pages/tkb-constraints.js`, 2 test ghép; mục 26/10 ghi là đã commit nhưng không thấy trong lịch sử nhánh.
