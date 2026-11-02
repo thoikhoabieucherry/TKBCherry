@@ -28,6 +28,7 @@ graph TD
    * **Trang quản trị dữ liệu** (Khối / Lớp / Giáo viên / Môn học / Tiết chuẩn / Phân công / Dạy ghép): `web/app.html`, `web/app.js`, `web/modules/admin-nav.js`, `web/modules/day-ghep.js` (28/08/2026 — dòng dạy ghép `DATA.dayGhep` được chiếu vào bảng phân công `pccmMatrix["Lớp|Môn"] = "GV1, GV2"`: dòng một môn dưới đúng môn thật, nhãn hiển thị `ten` chỉ dùng trên TKB qua `tkbMonLabel`; dòng nhiều môn dưới môn ảo mang tên dòng — nên planner/ràng buộc/bộ giải dùng nguyên hợp đồng phân công).
    * **Bộ giải & tối ưu FET chạy trực tiếp trên Browser**: `web/pages/tkb-fet-engine.js`, `web/pages/tkb-fet-worker.js`.
    * **Quản trị hệ thống & Cổng trường học**: `web/super-admin.js`, `web/school-portal.js`, `web/app.js`.
+   * **Trang công khai (đổi 02/11/2026)**: trang chủ `web/index.html` chỉ còn khu đăng nhập/đăng ký (logo, khẩu hiệu, hình minh hoạ, chân trang một dòng) — bản landing 07/10 cho đơn startup đã gỡ; meta description/canonical/OG giữ lại, JSON-LD bỏ. Trang `/about`, `/privacy`, `/terms` là `web/<trang>/index.html` (handler tĩnh Rust tự phục vụ `index.html` của thư mục — không cần đổi backend), CSS riêng `web/public-site.css` (lớp `lp-*`), trang chủ không nạp file này. `web/robots.txt` + `web/sitemap.xml` do **nginx** phục vụ (Rust không phục vụ .txt/.xml) — khối `TKB_PUBLIC_SEO` cài bằng `tools/vps-deploy/install-public-seo-nginx.py`.
 
 2. **Backend API Server (Rust)**:
    * **Thư mục**: `rust_api/`
@@ -125,9 +126,9 @@ python tools/vps-deploy/update-deploy.py
 ```powershell
 cd C:\Users\Love\Documents\Codex\TKBCherry
 powershell -ExecutionPolicy Bypass -File tools\cloud-run\deploy.ps1 `
-    -ProjectId project-61ee7855-507e-40a3-879 `
-    -InvokerServiceAccount tkb-cloud-run-invoker@project-61ee7855-507e-40a3-879.iam.gserviceaccount.com `
-    -RuntimeServiceAccount tkb-cloud-run-runtime@project-61ee7855-507e-40a3-879.iam.gserviceaccount.com `
+    -ProjectId project-29291bde-aebd-4c97-baf `
+    -InvokerServiceAccount tkb-cloud-run-invoker@project-29291bde-aebd-4c97-baf.iam.gserviceaccount.com `
+    -RuntimeServiceAccount tkb-cloud-run-runtime@project-29291bde-aebd-4c97-baf.iam.gserviceaccount.com `
     -ConfirmDeployment
 ```
 *Script sẽ tự động:*
@@ -173,13 +174,16 @@ Ba bộ test cần backend đang chạy (`app_assignment_subject_visibility`, `a
 | `solver_runtime/scripts/cloud_run_service.py` | Service endpoint nhận request solve trên Google Cloud Run |
 | `tools/vps-deploy/update-deploy.py` | Script tự động hóa build và deploy lên VPS một bước |
 | `tools/cloud-run/deploy.ps1` | Script tự động hóa build container và deploy lên Google Cloud Run |
+| `web/index.html` | Trang chủ: đăng nhập / đăng ký / quên mật khẩu, meta SEO |
+| `web/about/`, `web/privacy/`, `web/terms/`, `web/public-site.css` | Trang công khai `/about`, `/privacy`, `/terms` (HTML tĩnh, không cần đăng nhập) + CSS chung |
+| `web/robots.txt`, `web/sitemap.xml` + `tools/vps-deploy/install-public-seo-nginx.py` | SEO; nginx phục vụ hai file này (khối `TKB_PUBLIC_SEO`) |
 
 ---
 
 ## 6. LƯU Ý QUAN TRỌNG KHI KẾ THỪA DỰ ÁN
 1. **Duy nhất một thư mục chuẩn**: Toàn bộ dự án hoạt động duy nhất tại `C:\Users\Love\Documents\Codex\TKBCherry` (thư mục mã nguồn `TKBCherry/`). Không sử dụng hay tham chiếu đến các thư mục ngoài nào khác. Remote chuẩn là `https://github.com/thoikhoabieucherry/TKBCherry` — commit và push thường xuyên để quản lý online.
 2. **Không sửa trực tiếp trên DB VPS mà không backup**: Trước khi thực hiện bất kỳ thao tác thủ công nào trên `/opt/cherry-scheduler/rust_api/tkb_store.db`, luôn copy ra một file backup `.tar.gz`.
-3. **Cấu hình Cloud Run Profile**: Thông tin profile Cloud Run an toàn nằm trong Super Admin -> Đổi tài khoản Google Cloud. Nếu thay đổi tài khoản GCP, chỉ cần chạy lại `deploy.ps1` với `ProjectId` mới và dán JSON profile kết quả vào giao diện Super Admin.
+3. **Cấu hình Cloud Run Profile**: Project GCP hiện hành (20/10/2026) là `project-29291bde-aebd-4c97-baf` (Owner: `thayankorea@gmail.com`). Profile nằm trong Super Admin → Đổi tài khoản Google Cloud và trong kvstore `serverless_infrastructure_v1` trên VPS. Đổi project: `deploy.ps1 -ProjectId <mới>` → cập nhật profile VPS + `TKB_CLOUD_RUN_SERVICE_ACCOUNT` + quyền WIF `workloadIdentityUser` trên SA invoker mới. Pool WIF X.509 vẫn ở project cũ `project-61ee7855-507e-40a3-879` (số `747788327707`, pool `tkb-vps`) — **chưa tắt project cũ** cho đến khi migrate pool WIF.
 4. **Cơ chế Auto-Resolve School**: Không cần lo lắng việc mở nhầm trường `"default"` khi đăng nhập thiết bị mới, hệ thống đã tích hợp cơ chế tự động tìm trường có dữ liệu hợp lệ đầu tiên của tài khoản.
 5. **Giữ tài liệu đồng bộ với mã nguồn**: file này từng mô tả sai backend (Axum/Tokio/JWT, port 8787) — đã sửa ngày 2026-08-16. Khi thay đổi kiến trúc, cập nhật cả file này lẫn `docs/CURRENT_STATE.md`; đối chiếu `Cargo.toml`/`.env.example` trước khi mô tả công nghệ.
 

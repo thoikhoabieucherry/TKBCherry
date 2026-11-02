@@ -624,6 +624,7 @@ def compute_metrics(
     *,
     rules: TimetableRuleSet | None = None,
     shared_teacher_slots: Iterable[tuple[str, int, str, int]] | None = None,
+    fixed_lessons: Iterable[Lesson] | None = None,
 ) -> dict[str, Any]:
     """Hard/quality metrics of ``lessons``.
 
@@ -631,9 +632,21 @@ def compute_metrics(
     locked for one teacher in several classes at once (school-wide activity).
     Those collisions are intentional and are not counted as teacher conflicts;
     session statistics count such a slot once.
+
+    ``fixed_lessons``: lessons the USER locked (o co dinh). 06/10 (truong
+    0adf9782364): nguoi dung co dinh 2 tiet Tin hoc Quoc te lien nhau chieu T6
+    o 6/5 va 7/5 trong khi gioi han mon la 1 tiet/buoi -> MOI ket qua bi tinh
+    vi pham cung (engine khong duoc doi o co dinh), may chu tra ok=false va
+    trinh duyet giu lich cu du luot Cherry da toi uu tot hon han. Phan vuot gioi
+    han nam tron trong o co dinh duoc ghi vao
+    ``fixed_subject_session_limit_overrides`` (canh bao), khong tinh vi pham;
+    engine xep THEM tiet vuot thi van la vi pham.
     """
 
     rules = resolve_rule_set(rules)
+    fixed_by_class_subject_session: Counter[tuple[str, str, int, str]] = Counter(
+        (x.class_name, x.subject, x.day, x.session) for x in (fixed_lessons or ())
+    )
     shared_slots = {tuple(item) for item in (shared_teacher_slots or [])}
     constraints = rules.constraints
     class_grade = data.class_grade
@@ -725,6 +738,7 @@ def compute_metrics(
                 )
 
     subject_session_violations = []
+    fixed_limit_overrides = []
     by_class_subject_session = Counter((x.class_name, x.subject, x.day, x.session) for x in lessons)
     assignment_session_limits: dict[tuple[str, str], int] = {}
     for assignment in data.assignments:
@@ -747,9 +761,11 @@ def compute_metrics(
             data.limits_by_grade_subject.get((grade, subject), 99),
         )
         if actual > limit:
-            subject_session_violations.append(
-                {"class": class_name, "grade": grade, "subject": subject, "day": day, "session": part, "actual": actual, "limit": limit}
-            )
+            item = {"class": class_name, "grade": grade, "subject": subject, "day": day, "session": part, "actual": actual, "limit": limit}
+            if actual <= fixed_by_class_subject_session.get((class_name, subject, day, part), 0):
+                fixed_limit_overrides.append(item)
+            else:
+                subject_session_violations.append(item)
 
     contiguous_block_violations = []
     if rules.contiguous_multi_period_assignments:
@@ -839,6 +855,8 @@ def compute_metrics(
     }
     if shared_slots:
         metrics["shared_fixed_teacher_slots"] = len(shared_slots)
+    if fixed_limit_overrides:
+        metrics["fixed_subject_session_limit_overrides"] = fixed_limit_overrides
     metrics["core_hard_ok"] = (
         metrics["scheduled_periods"] == metrics["expected_periods"]
         and metrics["class_slot_conflicts"] == 0

@@ -1,10 +1,10 @@
 param(
-    [string]$ServiceUrl = 'https://tkb-solver-tys7xrhbca-et.a.run.app',
+    [string]$ServiceUrl = 'https://cherry-solver-zogvwdnwva-et.a.run.app',
     [string]$ExpectedDigest = '',
     # 22/08: tai khoan gcloud tren may dev la tai khoan NGUOI DUNG -> khong
     # mint duoc ID token co --audiences; phai muon danh SA invoker (cung SA ma
     # deploy.ps1 -InvokerServiceAccount dung).
-    [string]$InvokerServiceAccount = 'tkb-cloud-run-invoker@project-61ee7855-507e-40a3-879.iam.gserviceaccount.com'
+    [string]$InvokerServiceAccount = 'cherry-invoker@project-8ce8bf36-3ba7-430f-8f7.iam.gserviceaccount.com'
 )
 # Authenticated canary of the CHERRY engine (settings.engine="cherry") on the
 # Cloud Run service. Token stays in memory only.

@@ -280,6 +280,111 @@ class CloudRunTransportTests(unittest.TestCase):
         )
         self.assertEqual(captured["timeout"], 30.0)
 
+    @staticmethod
+    def _fake_google_modules(id_token_calls: list[str]):
+        class Credentials:
+            token = "federated-access-token"
+
+            def refresh(self, _request) -> None:
+                return None
+
+        google = types.ModuleType("google")
+        google.__path__ = []
+        auth = types.ModuleType("google.auth")
+        auth.__path__ = []
+        transport = types.ModuleType("google.auth.transport")
+        transport.__path__ = []
+        requests = types.ModuleType("google.auth.transport.requests")
+        requests.Request = lambda: None
+        oauth2 = types.ModuleType("google.oauth2")
+        oauth2.__path__ = []
+        id_token = types.ModuleType("google.oauth2.id_token")
+
+        def fetch_id_token(_request, audience):
+            id_token_calls.append(audience)
+            raise RuntimeError("metadata server ping timed out")
+
+        id_token.fetch_id_token = fetch_id_token
+        auth.default = lambda scopes: (Credentials(), None)
+        transport.requests = requests
+        auth.transport = transport
+        oauth2.id_token = id_token
+        google.auth = auth
+        google.oauth2 = oauth2
+        return {
+            "google": google,
+            "google.auth": auth,
+            "google.auth.transport": transport,
+            "google.auth.transport.requests": requests,
+            "google.oauth2": oauth2,
+            "google.oauth2.id_token": id_token,
+        }
+
+    def test_wif_credentials_skip_the_metadata_server_ping(self) -> None:
+        id_token_calls: list[str] = []
+        with tempfile.TemporaryDirectory() as folder:
+            adc = Path(folder) / "credentials.json"
+            adc.write_text(json.dumps({"type": "external_account"}), encoding="utf-8")
+            with (
+                mock.patch.dict(client.sys.modules, self._fake_google_modules(id_token_calls)),
+                mock.patch.dict(
+                    client.os.environ,
+                    {"GOOGLE_APPLICATION_CREDENTIALS": str(adc)},
+                    clear=False,
+                ),
+                mock.patch.object(
+                    client, "_workload_identity_token", return_value="a.b.c"
+                ) as wif,
+            ):
+                self.assertEqual(client._identity_token("https://sin.example.run.app"), "a.b.c")
+        self.assertEqual(id_token_calls, [])
+        wif.assert_called_once_with("https://sin.example.run.app")
+
+    def test_iam_error_keeps_googles_reason(self) -> None:
+        body = json.dumps(
+            {"error": {"code": 404, "message": "Account disabled: 281501759244137"}}
+        ).encode("utf-8")
+
+        def refuse(request, timeout):
+            raise client.urllib.error.HTTPError(
+                request.full_url, 404, "Not Found", {}, io.BytesIO(body)
+            )
+
+        with (
+            mock.patch.dict(client.sys.modules, self._fake_google_modules([])),
+            mock.patch.dict(
+                client.os.environ,
+                {"TKB_CLOUD_RUN_SERVICE_ACCOUNT": "inv@p.iam.gserviceaccount.com"},
+                clear=False,
+            ),
+            mock.patch.object(client.urllib.request, "urlopen", refuse),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "HTTP 404: Account disabled"):
+                client._workload_identity_token("https://sin.example.run.app")
+
+    def test_auth_failure_stops_before_trying_other_regions(self) -> None:
+        minted: list[str] = []
+
+        def no_token(audience: str) -> str:
+            minted.append(audience)
+            raise client.CloudRunAuthError("IAM Credentials HTTP 404: Account disabled")
+
+        env = {
+            "TKB_CLOUD_RUN_URL": "https://sin.example.run.app",
+            "TKB_CLOUD_RUN_FALLBACK_URLS": "https://jkt.example.run.app,https://tpe.example.run.app",
+            "TKB_CLOUD_RUN_SOLVER_DIGEST": "d" * 64,
+        }
+        with mock.patch.dict(client.os.environ, env, clear=False), mock.patch.object(
+            client, "_read_request", return_value=b'{"data":{}}'
+        ), mock.patch.object(client, "_identity_token", side_effect=no_token), mock.patch.object(
+            client.urllib.request, "urlopen", side_effect=AssertionError("must not dispatch")
+        ), mock.patch.object(client.sys, "stderr", io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, "cloud_run_auth_unavailable.*Account disabled"):
+                client.solve()
+        # One identity serves every region: the same refusal would repeat, so
+        # the Rust coordinator gets the failure at once (early VPS fallback).
+        self.assertEqual(minted, ["https://sin.example.run.app"])
+
     def _run_client_solve_with_regions(self, responders, fallback_urls: str):
         """Drive client.solve() against fake per-URL responders.
 

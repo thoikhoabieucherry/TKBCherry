@@ -184,7 +184,14 @@ class WarmRepairKeepsProgressTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.data = _school()
-        cls.free = solve_from_ui_data_v3(_school(with_rule=False), _settings(3))
+        # Lich "khong luat" chi la DO NGHE: can >= 2 ngay vi pham de con no sau
+        # khi pha 2 go mot phan. Seed co dinh 3 tung du, nhung engine toi uu GV
+        # tot hon (06/10) thi seed 3 ra 0 vi pham -> chon seed dau tien du dieu kien.
+        cls.free = {}
+        for seed in (3, 5, 7, 11, 13):
+            cls.free = solve_from_ui_data_v3(_school(with_rule=False), _settings(seed))
+            if _violations(list(cls.free.get("lessons") or [])) >= 2:
+                break
 
     def _partially_repairable_soft(self):
         problem = _problem(self.data)

@@ -289,7 +289,8 @@
   }
 
   .auth-home .auth-panel-brand h1 {
-    max-width: 12ch;
+    /* Not ch: it resolves against the fallback font until Outfit loads, and gradient text is clipped to this box. */
+    max-width: none;
     font-size: clamp(2rem, 3.5vw, 3rem);
   }
 }
