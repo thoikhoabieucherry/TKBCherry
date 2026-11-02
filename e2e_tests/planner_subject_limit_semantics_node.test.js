@@ -909,6 +909,32 @@ test("fixed-class header total stays on assigned periods after lessons are fixed
   );
 });
 
+test("fixed-class total respects grade-zero tietchuan and does not borrow from other grades", () => {
+  // Trường thật 0adf9782362 lớp 9/10: CNghệ khối 9 = 0 nhưng khối khác = 1
+  // → trước đây "Tổng số tiết" Yêu cầu cố định = 31 thay vì 30 như Phân công.
+  const data = {
+    lop:[{id:"L9", ten:"9/10", ten2:"9/10", khoi:"Khối 9"}],
+    monhoc:[
+      {id:"MH_CN", ma:"CNghệ", ten:"Công nghệ"},
+      {id:"MH_TO", ma:"Toán", ten:"Toán"}
+    ],
+    mon:[
+      {ten:"CNghệ", khoi:"Khối 6", sotiet:"1"},
+      {ten:"CNghệ", khoi:"Khối 9", sotiet:"0"},
+      {ten:"Toán", khoi:"Khối 9", sotiet:"4"}
+    ],
+    pccmMatrix:{"9/10|CNghệ":"GV1", "9/10|Toán":"GV2"},
+    pccmTietMatrix:{},
+    tkb:{},
+    tkbConstraints:{}
+  };
+  const hooks = loadConstraints(data).__testHooks;
+  const rows = hooks.fixedOffTopRows("class", "L9");
+  assert.equal(rows.total, 4, "must not add the other-grade CNghệ=1 on top of Toán=4");
+  const cn = rows.rows.find(r => /cngh/i.test(String(r.mon || "")));
+  assert.ok(!cn || Number(cn.count || 0) === 0, "grade-zero subject must contribute 0 periods");
+});
+
 test("fixed teacher requirements preserve the teacher order used by assignments", () => {
   const data = fixedLessonMultiplicityData();
   data.giaovien = [

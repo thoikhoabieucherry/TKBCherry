@@ -9,6 +9,32 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-02 ĐẨY NỐT 17 FILE SỬA DỞ LÊN GITHUB (CHƯA DEPLOY gì thêm)
+
+- **Chủ dự án**: "tôi muốn đưa dự án này lên github". Repo đã có sẵn (`thoikhoabieucherry/TKBCherry`, riêng tư),
+  nhánh làm việc `cursor/cherry-v3-speed-teacher-stats-a03d` đã đẩy đủ; chủ dự án chọn commit 17 file sửa dở của các phiên
+  trước và đẩy lên nhánh này. **Không đụng `main`** (main trên GitHub dừng ở 20/08, sau nhánh này 61 commit; 28 commit FET
+  19–20/08 chỉ nằm trên main, chưa từng được gộp).
+- Nội dung commit (không phải viết mới phiên này):
+  - `tools/cloud-run/*` + `solver_runtime/tests/test_cloud_run_deploy_assets.py`: mặc định đổi sang project
+    `project-8ce8bf36-3ba7-430f-8f7`, service `cherry-solver`, repo ảnh `cherry-images`, SA `cherry-invoker@…`/`cherry-runtime@…`,
+    nhãn `app=cherry`; `deploy.ps1` không còn vùng phụ mặc định, lần tạo service đầu bỏ `--no-traffic`, cấp quyền invoker
+    TRƯỚC canary; `deploy-and-pin.ps1` đọc URL từng vùng bằng `gcloud run services list` thay vì ghi cứng.
+    **Phiên này KHÔNG xác minh** service đó đang chạy hay VPS đã ghim sang project này — `CURRENT_STATE.md` vẫn ghi project
+    `29291bde` (bị đình chỉ 23/10). Kiểm tra trước khi chạy bất kỳ script deploy nào.
+  - `web/pages/tkb-constraints.js` (+ cache-bust trong `sapxep.html`): Yêu cầu cố định của lớp không còn "vay" số tiết
+    từ khối khác khi Tiết chuẩn đúng khối = 0 (lớp 9/10 trường `0adf9782362`: CNghệ khối 9 = 0 → tổng 31 thay vì 30), có test
+    mới trong `planner_subject_limit_semantics_node.test.js`. **Chưa rõ đã deploy** — so bản live trước khi deploy.
+  - 2 test mới `planner_ghep_session_limit_node` (01/10) và `planner_ghep_teacher_grade_label_node` (30/09);
+    `.gitignore` chặn `/scratch_*`, `/cloud_e2e_result*.json`, `/cloud_run_profiles*.json` ở gốc; AGENTS.md thêm luật giữ
+    gốc repo sạch; archive tháng 9 bổ sung các mục 30/09 bị sót.
+- Đổi 6 file từ CRLF về LF trước khi commit (chỉ mục là LF) để diff chỉ còn thay đổi thật (904+/59−).
+- **Bẫy test trên máy này**: `run_tests.py` ở thư mục làm việc báo 6 "MỚI HỎNG" (`planner_constraint_audit_stale_class`,
+  `planner_fixed_chao_co_survives_load`, `planner_ghep_stale_pin`, `planner_lesson_block_impossible_min`,
+  `planner_lesson_block_standard_periods`, `planner_teacher_code_nfc`) vì `web/pages/phanmon.js` trên đĩa là CRLF
+  (`git ls-files --eol` = `i/lf w/crlf`). Kiểm chứng: worktree sạch của HEAD + áp đúng 17 file này → "Khong co test nao moi
+  hong so voi moc chuan".
+
 ## 2026-11-02 TRANG CHỦ TRỞ LẠI TRANG ĐĂNG NHẬP GỌN (như trước 07/10) — ĐÃ DEPLOY (cả vá tiêu đề bị cắt)
 
 - **Chủ dự án**: "tôi đã thiết kế trang chủ để xin startup của claude ko được, giờ trang chủ rối quá thiết kế lại cho tôi như cũ cũng được".

@@ -23,3 +23,9 @@ on NEW breakage. GitHub still runs `security.yml` (secret scan + CodeQL) and Dep
 
 Never store passwords, tokens, cookies, or bearer credentials in this repository.
 VPS scripts read secrets from environment variables such as `TKB_VPS_PASSWORD`.
+
+Keep the repo root clean. One-off analysis scripts, logs, and school-store JSON
+dumps go in `scratch/<task-name>/` (gitignored), never in the root: a store dump
+is a real school's teacher/class data. Finish or park work before the session
+ends — commit it, or move unfinished code to a `wip/<topic>` branch — instead of
+leaving modified files in the working tree for the next session to deploy around.
