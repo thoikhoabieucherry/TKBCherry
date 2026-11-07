@@ -1894,8 +1894,16 @@
     // bo cac option khac di; truong hop check ma khong co moi keu nguoi dung mo len"): trang
     // tkbcherry.com — hop "Dang bat" chi bao doi, khong nut nao; het gio cho ma Agent khong len thi
     // vong do doi sang hop "Chua mo duoc" (mo ung dung Cherry / Thu lai / tai / tat Agent).
-    const waitOnly = starting && agentPage();
-    if(waitOnly){
+    const solverName = agentPage() ? "Cherry Agent" : "bộ giải Cherry";
+    const blocked = windows && options?.lnaState === "denied";
+    const waitOnly = starting && agentPage() && !blocked;
+    if(blocked){
+      // 08/11: Chrome chan trang ket noi toi Cherry — mo/tai lai Cherry khong giup duoc, chi dung cho bam.
+      localInstallStartingUntil = 0;
+      modal.dataset.mode = "blocked";
+      card.appendChild(el("h3", "", `🍒 Chrome đang chặn ${solverName}`));
+      card.appendChild(el("p", "", "Bấm biểu tượng bên trái thanh địa chỉ → Cài đặt trang web → chọn Cho phép ở mục truy cập mạng cục bộ / ứng dụng trên thiết bị này, rồi tải lại trang (F5)."));
+    }else if(waitOnly){
       modal.dataset.waitOnly = "true";
       card.appendChild(el("h3", "", "🍒 Đang bật Cherry Agent…"));
       card.appendChild(el("p", "", "Vui lòng đợi trong giây lát."));
@@ -1980,9 +1988,24 @@
     modal.appendChild(card);
     document.body.appendChild(modal);
     modal.hidden = false;
-    if(starting && !waitOnly) setLocalInstallStatus("Đang chờ bộ giải lên…", false);
+    if(starting && !waitOnly && !blocked) setLocalInstallStatus("Đang chờ bộ giải lên…", false);
     // Bo giai len muon (Chrome hoi "Mo...?" / vua cai xong) -> hop tu nhan va xep tiep.
     startLocalInstallPolling();
+    if(windows && options?.lnaState === undefined){
+      // 08/11: doc quyen ket noi thiet bi cua Chrome roi sua hop: bi chan -> hop "Chrome dang chan";
+      // dang hoi -> them mot dong nhac bam Cho phep.
+      localNetworkPermissionState().then(state => {
+        if(document.getElementById("tkbLocalSolverInstall") !== modal || modal.hidden) return;
+        if(state === "denied"){
+          showLocalSolverDialog(Object.assign({}, options, {lnaState:"denied"}));
+        }else if(state === "prompt"){
+          const hint = el("p", "lsi-lna-hint", "Chrome hỏi cho phép trang truy cập ứng dụng trên thiết bị thì bấm Cho phép.");
+          hint.id = "tkbLocalSolverLnaHint";
+          if(typeof card.insertBefore === "function") card.insertBefore(hint, status);
+          else card.appendChild(hint);
+        }
+      }).catch(() => {});
+    }
     return modal;
   }
 
@@ -2756,11 +2779,39 @@
     }
   }
 
+  /* 08/11 (chu du an: "dung tren may khac thay Cherry bat ma web lai khong nhan duoc"): Chrome ban moi
+     bat trang https xin quyen "truy cap ung dung va dich vu tren thiet bi nay" (Local Network Access)
+     truoc khi goi 127.0.0.1. Chua cho phep -> yeu cau treo cho nguoi dung tra loi hop hoi (do 1,5 s
+     la huy) hoac bi chan han -> trang tuong Cherry chua chay va bao "hay mo ung dung Cherry". May chu
+     du an da cho phep tu truoc nen khong gap. Ten quyen doi qua cac ban Chrome -> thu lan luot. */
+  const LOCAL_NETWORK_PERMISSION_NAMES = ["loopback-network", "local-network-access", "local-network"];
+  const LOCAL_NETWORK_PROMPT_WAIT_MS = 45000;
+
+  async function localNetworkPermissionState(){
+    const permissions = window.navigator?.permissions;
+    if(!permissions || typeof permissions.query !== "function") return "";
+    for(const name of LOCAL_NETWORK_PERMISSION_NAMES){
+      try{
+        const status = await permissions.query({name});
+        const state = String(status?.state || "");
+        if(state) return state;
+      }catch(_){ }
+    }
+    return "";
+  }
+
   async function probeRustApiBase(base, timeoutMs){
     const normalized = String(base || "").replace(/\/+$/, "");
     if(!normalized) return "";
+    let waitMs = Math.max(1500, Number(timeoutMs || 5000));
+    if(/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(normalized)){
+      // Chrome dang hoi quyen: giu yeu cau toi khi nguoi dung bam Cho phep (huy som = mat hop hoi).
+      try{
+        if(await localNetworkPermissionState() === "prompt") waitMs = Math.max(waitMs, LOCAL_NETWORK_PROMPT_WAIT_MS);
+      }catch(_){ }
+    }
     const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), Math.max(1500, Number(timeoutMs || 5000)));
+    const timer = window.setTimeout(() => controller.abort(), waitMs);
     try{
       const response = await fetch(`${normalized}/api/health`, {cache:"no-store", signal:controller.signal});
       const payload = await response.json().catch(() => null);
@@ -21094,7 +21145,8 @@
         agentEnabled,
         showAgentAnnouncement,
         scheduleAgentAnnouncement,
-        localSolverDownloadUrl
+        localSolverDownloadUrl,
+        localNetworkPermissionState
       };
     }
   }catch(_){}
