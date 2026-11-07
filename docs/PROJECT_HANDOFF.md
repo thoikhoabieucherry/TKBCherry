@@ -9,6 +9,25 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-08 CHERRY AGENT TRÊN MÁY KHÁC: CHROME CHẶN/HỎI QUYỀN "ỨNG DỤNG TRÊN THIẾT BỊ" (ĐÃ DEPLOY) + KÝ SỐ CHERRY.EXE
+
+- **Chủ dự án**: "Cherry.exe trên máy khác: Chrome chặn cài đặt và đường dẫn check theo máy của tôi" → "dùng chứng chỉ ký số
+  ký được không? máy khác thấy Cherry bật mà web không nhận".
+- **Đường dẫn**: KHÔNG ghi cứng — `install.ps1` cài vào `%LOCALAPPDATA%\Cherry` của từng người dùng, `cherry-local://` + lối tắt
+  theo thư mục đó, `cherry_local_solver.py` dò đường dẫn tương đối. `C:\Users\Cherry\…` chỉ nằm trong `co_filename` của .pyc
+  (dựng ở `%TEMP%\cmnb21`), không dùng khi chạy; Cherry.exe phát trên Netlify (sha `1dc678a5…`) không chứa chuỗi đó.
+- **Ký số**: Cherry.exe `NotSigned`, .pyd ortools cũng không ký → Chrome cảnh báo tải, SmartScreen, Smart App Control (Win 11 bật)
+  chặn hẳn. Chứng chỉ của chủ dự án trên máy (Ban Cơ yếu Chính phủ, cá nhân công vụ THCS Củ Chi) chỉ có EKU Client Auth /
+  Secure Email / Smart Card Logon — KHÔNG ký mã được. Cần chứng thư Code Signing (Azure Trusted Signing / OV-EV) — chờ chủ dự án.
+- **Web không nhận Cherry**: Cherry trả đúng (GET health + preflight `Access-Control-Request-Private-Network` → 200/204 với ACAO
+  tkbcherry.com + `Allow-Private-Network`). Nguyên nhân: Chrome Local Network Access — trang https phải được cho phép "truy cập
+  ứng dụng và dịch vụ trên thiết bị" mới gọi 127.0.0.1; probe huỷ sau 1,5 s làm mất hộp hỏi, hộp thoại báo nhầm "hãy mở Cherry".
+  Sửa bridge: `localNetworkPermissionState()` (thử `loopback-network`, `local-network-access`, `local-network`); `prompt` → probe
+  127.0.0.1 chờ tới 45 s + dòng "bấm Cho phép" trong hộp; `denied` → hộp `blocked` "Chrome đang chặn Cherry Agent" chỉ đường Cài
+  đặt trang web (không nút tải/mở). Test toggle 39/39, `run_tests.py` không mới hỏng. Commit 2a44ae2 (nhánh agent 071e20c). CHƯA
+  thử trên Chrome thật (extension mất kết nối). Deploy `scratch/agent-deploy/run.py`: preflight `fbd346db…`, live `f323d790…`,
+  backup `/root/tkb-backups/agent-lna-20261108/`.
+
 ## 2026-11-02 ĐẨY NỐT 17 FILE SỬA DỞ LÊN GITHUB (CHƯA DEPLOY gì thêm)
 
 - **Chủ dự án**: "tôi muốn đưa dự án này lên github". Repo đã có sẵn (`thoikhoabieucherry/TKBCherry`, riêng tư),
