@@ -416,6 +416,57 @@ test("ô ⏱: giá trị lạ làm tròn về 1/2/3 phút; Mac cũng có ô (x�
   assert.equal(netlify.window.__TKB_ENGINE_BUDGET_SECONDS, undefined);
 });
 
+function findId(node, id){
+  if(!node) return null;
+  if(node.id === id) return node;
+  for(const child of node.children || []){
+    const hit = findId(child, id);
+    if(hit) return hit;
+  }
+  return null;
+}
+
+test("Chrome chặn quyền truy cập thiết bị: hộp nói rõ Chrome đang chặn Cherry Agent và chỉ chỗ bấm, không bảo mở hay tải Cherry", async () => {
+  const permissions = {query: async ({name}) => {
+    if(name === "loopback-network") throw new TypeError("unknown permission");
+    return {state:"denied"};
+  }};
+  const {hooks, document} = loadBridge({fetchImpl:offlineLocal, navigator:{permissions}, storage:memoryStorage({TKB_AGENT_ANNOUNCE_V2:"1"})});
+  assert.equal(await hooks.localNetworkPermissionState(), "denied", "tên quyền cũ vẫn đọc được");
+  hooks.showLocalSolverDialog({runCherryWhenReady:true});
+  await new Promise(r => setTimeout(r, 30));
+  const modal = document.getElementById("tkbLocalSolverInstall");
+  assert.equal(modal.dataset.mode, "blocked");
+  const text = allText(modal);
+  assert.ok(text.includes("Chrome đang chặn Cherry Agent"), text);
+  assert.ok(text.includes("Cài đặt trang web"), text);
+  assert.ok(!text.includes("Hãy mở ứng dụng Cherry"), text);
+  assert.equal(findId(modal, "tkbLocalSolverDownload"), null);
+  assert.ok(findId(modal, "tkbLocalSolverAgentOff"));
+  assert.ok(findId(modal, "tkbLocalSolverClose"));
+  hooks.stopLocalInstallPolling();
+});
+
+test("Chrome đang hỏi quyền: chờ người dùng bấm Cho phép (không huỷ sau 1,5 s) và nhắc trong hộp", async () => {
+  const slowLocal = (url, init) => new Promise((resolve, reject) => {
+    if(!url.startsWith(LOCAL)) return resolve(health(url));
+    // Cherry "len" roi thi trang hoi them trang thai luot xep: tra rong.
+    if(!url.endsWith("/api/health")) return resolve({ok:true, status:200, json:async () => ({ok:true, jobs:[], queue:[], completedJobs:[]})});
+    const timer = setTimeout(() => resolve(health(url)), 2200);
+    init.signal?.addEventListener?.("abort", () => { clearTimeout(timer); reject(new Error("aborted")); });
+  });
+  const plain = loadBridge({fetchImpl:slowLocal});
+  assert.equal(await plain.hooks.rustApiBase(), "", "không có hộp hỏi quyền: vẫn huỷ sau 1,5 s như cũ");
+  const permissions = {query: async () => ({state:"prompt"})};
+  const asked = loadBridge({fetchImpl:slowLocal, navigator:{permissions}, storage:memoryStorage({TKB_AGENT_ANNOUNCE_V2:"1"})});
+  assert.equal(await asked.hooks.rustApiBase(), LOCAL, "đợi tới khi Chrome cho phép");
+  asked.hooks.showLocalSolverDialog({runCherryWhenReady:false});
+  await new Promise(r => setTimeout(r, 30));
+  const modal = asked.document.getElementById("tkbLocalSolverInstall");
+  assert.ok(allText(modal).includes("bấm Cho phép"), allText(modal));
+  asked.hooks.stopLocalInstallPolling();
+});
+
 test("hộp cài trên tkbcherry.com: tải Cherry.exe từ trang Netlify, có nút Tắt Agent xếp luôn trên máy chủ", () => {
   const ran = [];
   const {hooks, document, window} = loadBridge({fetchImpl:health});
