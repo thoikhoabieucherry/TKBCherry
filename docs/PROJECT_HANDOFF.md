@@ -9,7 +9,7 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
-## 2026-11-08 TRANG GIỚI THIỆU /about LÀM LẠI THEO BỐ CỤC qtm.vn + LINK "GIỚI THIỆU" Ở TRANG CHỦ — ĐÃ DEPLOY RỒI CHỦ DỰ ÁN ROLLBACK (live = bản 02/11)
+## 2026-11-08 TRANG GIỚI THIỆU /about LÀM LẠI THEO BỐ CỤC qtm.vn + LINK "GIỚI THIỆU" Ở TRANG CHỦ — ĐÃ DEPLOY (rollback rồi deploy lại cùng ngày)
 
 - **Chủ dự án**: "tham khảo qtm.vn thiết kế lại web chúng ta biết đâu đăng ký được startup". Đã nói rõ: đơn Claude Startups bị
   từ chối vì chưa có pháp nhân để xác minh, trang đẹp hơn không đổi được điều đó (qtm.vn cũng không ghi MST). Chủ dự án chọn:
@@ -44,8 +44,10 @@
   thẻ đăng nhập còn, h1 không bị cắt. Rollback 3 file sửa: `python deploy.py files rollback about-20261108 web/index.html web/auth.css web/about/index.html`.
 - **ROLLBACK 08/11** (chủ dự án tự chạy đúng lệnh rollback trên, có restart, `active`): live lại đúng bản 02/11 (index `434217f1…`,
   auth.css `6aab167a…`, about `6a45ee44…`, đã curl đối chiếu). 5 file mới (`web/about/about.css`, `web/assets/about/*.jpg`) vẫn nằm trên
-  VPS nhưng không trang nào trỏ tới. **Repo (HEAD) vẫn là bản mới** → ĐỪNG deploy `web/index.html`, `web/auth.css`, `web/about/index.html`
-  từ HEAD khi chưa hỏi chủ dự án. Chủ dự án chưa nói lý do.
+  VPS nhưng không trang nào trỏ tới. Chủ dự án không nói lý do.
+- **DEPLOY LẠI 08/11** (chủ dự án chạy lại `! python scratch/about-deploy/run.py`): preflight remote = bản 02/11 cho 3 file sửa, 5 file mới
+  đã có sẵn (sha = local). Cùng tên backup `about-20261108` nên `cp -p` ghi lại đúng bản 02/11 vào backup → lệnh rollback ở trên vẫn đúng.
+  Live khớp sha local (index `44df393f…`, auth.css `6096ad48…`, about `d1d96daf…`). **Live = repo HEAD.**
 
 ## 2026-11-08 CHERRY AGENT TRÊN MÁY KHÁC: CHROME CHẶN/HỎI QUYỀN "ỨNG DỤNG TRÊN THIẾT BỊ" (ĐÃ DEPLOY) + KÝ SỐ CHERRY.EXE
 
