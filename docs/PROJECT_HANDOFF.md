@@ -9,7 +9,7 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
-## 2026-11-08 TRANG GIỚI THIỆU /about LÀM LẠI THEO BỐ CỤC qtm.vn + LINK "GIỚI THIỆU" Ở TRANG CHỦ (CHƯA DEPLOY)
+## 2026-11-08 TRANG GIỚI THIỆU /about LÀM LẠI THEO BỐ CỤC qtm.vn + LINK "GIỚI THIỆU" Ở TRANG CHỦ — ĐÃ DEPLOY
 
 - **Chủ dự án**: "tham khảo qtm.vn thiết kế lại web chúng ta biết đâu đăng ký được startup". Đã nói rõ: đơn Claude Startups bị
   từ chối vì chưa có pháp nhân để xác minh, trang đẹp hơn không đổi được điều đó (qtm.vn cũng không ghi MST). Chủ dự án chọn:
@@ -37,8 +37,11 @@
 - **Kiểm**: Chrome headless 1254×700 (2x) và 390×844 mobile: không tràn ngang (scrollWidth = 390), tab ảnh đổi đúng, font tiếng Việt nạp.
   `run_tests.py` cây chính: đúng 6 [MOI HONG] cũ của 02/11 (phanmon.js CRLF); worktree sạch HEAD + đúng các file này: 145 pass / 22 fail,
   "Khong co test nao moi hong so voi moc chuan". Không test nào đọc `web/about/` (chỉ `auth_mobile_layout_node` đọc `auth.css`, fail sẵn).
-- **Deploy (chưa chạy)**: `python scratch/about-deploy/run.py` — preflight rồi `deploy-files.py deploy about-20261108 --no-restart` 8 file
-  (3 sửa + 5 mới). Rollback 3 file sửa: `python deploy.py files rollback about-20261108 web/index.html web/auth.css web/about/index.html`.
+- **ĐÃ DEPLOY 08/11** (chủ dự án chạy `! python scratch/about-deploy/run.py`): preflight remote = đúng bản 02/11 (index `434217f1…`,
+  about `6a45ee44…`, auth.css `6aab167a…`), 5 file mới MISSING → NEW; `--no-restart`, backup `/root/tkb-backups/about-20261108/`.
+  Live (curl GET) khớp sha local cả 8 file (index `44df393f…`, auth.css `6096ad48…`, about `d1d96daf…`, about.css `f92c83af…`).
+  Chrome hồ sơ mới: `/about` không tràn ngang (1280 và 390), Be Vietnam Pro nạp, 4 số đúng, tab hiện; trang chủ có nút Giới thiệu,
+  thẻ đăng nhập còn, h1 không bị cắt. Rollback 3 file sửa: `python deploy.py files rollback about-20261108 web/index.html web/auth.css web/about/index.html`.
 
 ## 2026-11-08 CHERRY AGENT TRÊN MÁY KHÁC: CHROME CHẶN/HỎI QUYỀN "ỨNG DỤNG TRÊN THIẾT BỊ" (ĐÃ DEPLOY) + KÝ SỐ CHERRY.EXE
 
