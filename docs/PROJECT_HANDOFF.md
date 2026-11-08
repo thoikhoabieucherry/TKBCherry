@@ -21,9 +21,13 @@
   ảnh phần mềm theo tab (Yêu cầu / Phân công / In TKB, không JS thì hiện cả 3) → 4 bước bắt đầu → Về chúng tôi + bảng thông tin →
   lời mời liên hệ → chân trang 3 cột. `public-site.css` không đổi (privacy/terms vẫn dùng).
 - **Số liệu trên trang đều kiểm được**: 27 loại yêu cầu (đếm menu Yêu cầu: 11 GV + 12 môn + 3 cố định + 1 giới hạn số tiết/thời điểm),
-  75 lớp / ~2.200 tiết/tuần (trường lớn nhất, đã ghi từ 07/10), ⏱ 1–3 phút/lượt. **Số trường/lớp đang dùng CHƯA có**: classifier chặn
-  Claude đọc kho production → chủ dự án chạy `python scratch/about-deploy/stats.py` (chỉ đọc, sqlite `mode=ro`, đã thử trên DB giả
-  cùng cấu trúc), duyệt con số rồi mới thêm lên trang.
+  75 lớp / ~2.200 tiết/tuần (trường lớn nhất, đã ghi từ 07/10), ⏱ 1–3 phút/lượt. **Số dùng thật** (classifier chặn Claude đọc kho
+  production → chủ dự án chạy `! python scratch/about-deploy/stats.py`, chỉ đọc sqlite `mode=ro`): 79 tài khoản trường, 65 kho có ≥1 tiết
+  (2.293 lớp, 61.338 tiết). Bỏ 5 kho < 10 tiết/lớp (`510b6f8ac81`, `f93cab980e1`, `4afb620fa41`, `0vt12dq6431`, `5fe3d1177b1`),
+  `claudetest30` (bản sao thử), `default` (TKB 1 của Tân Phú Trung, trùng `af5ldw7i8y`) → 58 trường / 2.040 lớp / 58.532 tiết.
+  Chủ dự án duyệt **số làm tròn** đăng lên dải số liệu: "Hơn 50 trường", "~2.000 lớp", "Hơn 55.000 tiết mỗi tuần" + "27 loại yêu cầu"
+  (chừa chỗ cho kho thử chưa nhận ra, vd `7ff06d42ec1` 6 lớp/38 GV, `a31c3ff6fd1`, `c1619c9a521`). Bẫy của script: tên trường
+  trống vì mã kho ≠ khoá registry; nhóm phiên bản bằng cắt mọi chữ số cuối (đúng hơn là `id[:10]`); đếm ô chuỗi nên là cận dưới.
 - **Ảnh** `web/assets/about/tkb-{planner,rules,assignment,print}.jpg` (JPEG vì Rust `is_public_static_file` không phục vụ .webp):
   chụp từ app thật chạy cục bộ — `rust_api/target/release/tkb_rust_api.exe` (bản 17/08) với `TKB_APP_ROOT`=repo, `TKB_DB_PATH` ở
   scratchpad, cổng 2399; trường mẫu = `rust_api/fixtures/sample-data.json` (22 lớp) **đổi toàn bộ 43 tên/mã GV sang tên giả**
