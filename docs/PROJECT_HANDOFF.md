@@ -9,7 +9,7 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
-## 2026-11-08 (lượt 2) TRANG CHỦ = TRANG GIỚI THIỆU + THẺ ĐĂNG NHẬP; /about CHUYỂN VỀ / (CHỜ DEPLOY)
+## 2026-11-08 (lượt 2) TRANG CHỦ = TRANG GIỚI THIỆU + THẺ ĐĂNG NHẬP; /about CHUYỂN VỀ / — ĐÃ DEPLOY
 
 - **Chủ dự án**: "trang chủ là trang about luôn chứ ta :D" (sau khi deploy lượt 1 bên dưới).
 - **`web/index.html`** ghép bằng script (scratchpad `build_home.py`): head + thân của `/about` lượt 1, hero đổi thành 2 cột (`.ab-hero--home`,
@@ -26,6 +26,10 @@
   trong `docs/test-baseline.json`.
 - **Deploy**: `python scratch/about-deploy/run2.py` (4 file, backup `home-20261108`, `--no-restart`). Rollback về lượt 1:
   `python deploy.py files rollback home-20261108 web/index.html web/auth.css web/about/index.html web/about/about.css` (có restart).
+- **ĐÃ DEPLOY 08/11** (chủ dự án chạy `!`): preflight remote = bản lượt 1 (index `44df393f…`, auth.css `6096ad48…`, about `d1d96daf…`,
+  about.css `f92c83af…`); live khớp local cả 4 (index `819b2da8…`, auth.css `6aab167a…`, about `5e3b1780…`, about.css `c2af0bb2…`).
+  Chrome hồ sơ mới: `/about` → `/`, không tràn ngang (1280/390), font + 4 số đúng, nút Đăng ký/Đăng nhập đổi tab đúng (không gửi form
+  trên production). `/school-portal`, `/privacy`, `/terms`, ảnh 200.
 
 ## 2026-11-08 TRANG GIỚI THIỆU /about LÀM LẠI THEO BỐ CỤC qtm.vn + LINK "GIỚI THIỆU" Ở TRANG CHỦ — ĐÃ DEPLOY (rollback rồi deploy lại cùng ngày)
 
