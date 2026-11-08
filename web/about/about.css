@@ -259,6 +259,49 @@ body.ab-page {
   margin-top: 28px;
 }
 
+/* Trang chủ (08/11): chữ bên trái, thẻ đăng nhập của auth.css bên phải. */
+.ab-hero--home {
+  text-align: left;
+  padding-top: clamp(28px, 5vw, 64px);
+}
+
+.ab-hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 440px);
+  gap: clamp(28px, 5vw, 64px);
+  align-items: center;
+}
+
+.ab-hero--home h1 {
+  max-width: 620px;
+  margin: 0;
+  font-size: clamp(2rem, 3.8vw, 3.05rem);
+}
+
+.ab-hero--home .ab-hero-lead {
+  max-width: 580px;
+  margin: 18px 0 0;
+}
+
+.ab-hero--home .ab-cta-row {
+  justify-content: flex-start;
+}
+
+.ab-login {
+  min-width: 0;
+}
+
+.ab-login .auth-card {
+  width: 100%;
+  max-width: 440px;
+  margin-left: auto;
+  box-shadow: 0 24px 60px -28px rgb(15 23 42 / 35%);
+}
+
+.ab-login .auth-tab {
+  white-space: nowrap;
+}
+
 .ab-shot {
   margin: clamp(36px, 5vw, 56px) auto 0;
   max-width: 1080px;
@@ -729,6 +772,29 @@ body.ab-page {
   .ab-about {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .ab-hero-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ab-hero--home .ab-hero-copy {
+    text-align: center;
+  }
+
+  .ab-hero--home h1,
+  .ab-hero--home .ab-hero-lead {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .ab-hero--home .ab-cta-row {
+    justify-content: center;
+  }
+
+  .ab-login .auth-card {
+    margin: 0 auto;
+    max-width: 480px;
+  }
 }
 
 @media (max-width: 860px) {
@@ -772,9 +838,36 @@ body.ab-page {
     padding: 4px 18px;
   }
 
+  .ab-login .auth-tab {
+    padding-left: 8px;
+    padding-right: 8px;
+    font-size: 0.95rem;
+  }
+
   .ab-facts div {
     grid-template-columns: minmax(0, 1fr);
     gap: 2px;
+  }
+}
+
+@media (max-width: 380px) {
+  .ab-nav .ab-container {
+    gap: 10px;
+  }
+
+  .ab-brand {
+    gap: 8px;
+    font-size: 0.95rem;
+  }
+
+  .ab-brand img {
+    width: 28px;
+    height: 28px;
+  }
+
+  .ab-nav .ab-btn-sm {
+    padding: 0 12px;
+    font-size: 0.85rem;
   }
 }
 

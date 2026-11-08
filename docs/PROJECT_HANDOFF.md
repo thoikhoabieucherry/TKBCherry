@@ -9,6 +9,24 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-08 (lượt 2) TRANG CHỦ = TRANG GIỚI THIỆU + THẺ ĐĂNG NHẬP; /about CHUYỂN VỀ / (CHỜ DEPLOY)
+
+- **Chủ dự án**: "trang chủ là trang about luôn chứ ta :D" (sau khi deploy lượt 1 bên dưới).
+- **`web/index.html`** ghép bằng script (scratchpad `build_home.py`): head + thân của `/about` lượt 1, hero đổi thành 2 cột (`.ab-hero--home`,
+  `.ab-hero-grid`): trái chữ + nút "Đăng ký trường" / "Nhắn Zalo", phải **thẻ đăng nhập cũ** (so từng dòng sau khi bỏ thụt lề: 76/76 dòng giống hệt),
+  bọc `<div class="auth-home ab-login">` để các rule `.auth-home .auth-card…` của `auth.css` vẫn áp; KHÔNG đặt `auth-body` lên body (rule đó khoá
+  `height:100dvh; overflow:hidden`). Nạp lại đủ 4 CSS + 6 script của trang đăng nhập cũ (khoá `?v=` không đổi). Liên kết `/#authCard` → `#authCard`;
+  script nhỏ cuối trang: bấm phần tử `[data-auth-tab]` thì click tab tương ứng của thẻ (auth.js không đổi). Ảnh màn Sắp xếp nằm dưới hero.
+- **`web/about/index.html`** = trang chuyển hướng về `/` (meta refresh 0 + `location.replace`, canonical `/`, `noindex`). `web/auth.css` trả về bản
+  02/11 (sha `6aab167a…`, gỡ rule `.auth-about-link` của lượt 1). `about.css`: CSS hero 2 cột, tab thẻ `nowrap` (Be Vietnam Pro rộng hơn Outfit làm
+  "Đăng ký trường" xuống dòng ở 390 px), menu ≤380 px thu nhỏ (logo + chữ đè nút Đăng nhập ở 320 px — lỗi có cả ở /about lượt 1).
+- **Kiểm (máy chủ thử cổng 2399, Chrome headless)**: 1254×700 + 390×844 + 320×700 không tràn ngang; nút hero "Đăng ký trường" → tab Đăng ký, nút menu
+  "Đăng nhập" → tab Đăng nhập, Quên mật khẩu ↔ Quay lại đúng; **đăng nhập thật** tài khoản trường mẫu từ trang chủ mới → `/school-portal`;
+  `/about` → `/`. `node --test` `auth_activation_grant_one_year_node` 4/4; `auth_mobile_layout_node` 2/3 — ý hỏng là khoá `auth.css?v=` cũ, đã hỏng
+  trong `docs/test-baseline.json`.
+- **Deploy**: `python scratch/about-deploy/run2.py` (4 file, backup `home-20261108`, `--no-restart`). Rollback về lượt 1:
+  `python deploy.py files rollback home-20261108 web/index.html web/auth.css web/about/index.html web/about/about.css` (có restart).
+
 ## 2026-11-08 TRANG GIỚI THIỆU /about LÀM LẠI THEO BỐ CỤC qtm.vn + LINK "GIỚI THIỆU" Ở TRANG CHỦ — ĐÃ DEPLOY (rollback rồi deploy lại cùng ngày)
 
 - **Chủ dự án**: "tham khảo qtm.vn thiết kế lại web chúng ta biết đâu đăng ký được startup". Đã nói rõ: đơn Claude Startups bị
