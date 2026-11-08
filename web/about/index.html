@@ -1,138 +1,340 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>About Cherry Scheduler</title>
-  <meta name="description" content="Cherry Scheduler is built by Cherry Software, a Vietnamese EdTech startup founded in December 2025 in Ho Chi Minh City, building school timetable optimization software. Founder: Nguyen Hoang An. Contact: contact@tkbcherry.com." />
+  <title>Giới thiệu Cherry Scheduler</title>
+  <meta name="description" content="Cherry Scheduler là phần mềm xếp thời khóa biểu tự động trên web cho trường tiểu học, THCS và trung tâm GDNN-GDTX: nhập phân công, đặt 27 loại yêu cầu của giáo viên và môn học, bấm xếp, chỉnh bằng kéo-thả và xuất Excel." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://tkbcherry.com/about" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Cherry Scheduler" />
-  <meta property="og:title" content="About Cherry Scheduler" />
-  <meta property="og:description" content="Cherry Scheduler is built by Cherry Software, a Vietnamese EdTech startup founded in December 2025, building school timetable optimization software." />
+  <meta property="og:title" content="Giới thiệu Cherry Scheduler" />
+  <meta property="og:description" content="Phần mềm xếp thời khóa biểu tự động cho trường tiểu học, THCS và trung tâm GDNN-GDTX." />
   <meta property="og:url" content="https://tkbcherry.com/about" />
-  <meta property="og:image" content="https://tkbcherry.com/assets/cherry-scheduler-logo.png" />
+  <meta property="og:image" content="https://tkbcherry.com/assets/about/tkb-planner.jpg" />
+  <meta property="og:locale" content="vi_VN" />
   <link rel="icon" type="image/png" href="/assets/favicon-cherry.png?v=2" />
   <meta name="theme-color" content="#ffffff" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&amp;display=swap" />
-  <link rel="stylesheet" href="/public-site.css?v=20261007-public-v1" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&amp;display=swap" />
+  <link rel="stylesheet" href="/about/about.css?v=20261108-about-v1" />
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@type": "AboutPage",
-    "name": "About Cherry Scheduler",
+    "name": "Giới thiệu Cherry Scheduler",
     "url": "https://tkbcherry.com/about",
+    "inLanguage": "vi",
     "mainEntity": {
       "@type": "Organization",
       "@id": "https://tkbcherry.com/#organization",
       "name": "Cherry Software",
       "alternateName": "Cherry Scheduler",
       "url": "https://tkbcherry.com/",
+      "logo": "https://tkbcherry.com/assets/cherry-scheduler-logo.png",
       "email": "contact@tkbcherry.com",
-      "foundingDate": "2025-12",
-      "founder": { "@type": "Person", "name": "Nguyen Hoang An", "alternateName": "Nguyễn Hoàng Ân", "jobTitle": "Founder & CEO", "email": "an@tkbcherry.com", "sameAs": "https://www.linkedin.com/in/an-nguyen-1b4133442/" },
+      "telephone": "+84352261815",
+      "founder": {
+        "@type": "Person",
+        "name": "Nguyen Hoang An",
+        "alternateName": "Nguyễn Hoàng Ân",
+        "jobTitle": "Founder",
+        "email": "an@tkbcherry.com",
+        "sameAs": "https://www.linkedin.com/in/an-nguyen-1b4133442/"
+      },
       "address": {
         "@type": "PostalAddress",
-        "addressLocality": "Ho Chi Minh City",
+        "streetAddress": "424 đường Nhuận Đức",
+        "addressLocality": "Xã Nhuận Đức, TP. Hồ Chí Minh",
         "addressCountry": "VN"
       }
     }
   }
   </script>
 </head>
-<body class="lp-page">
-  <header class="lp-nav">
-    <div class="lp-nav-inner">
-      <a class="lp-brand" href="/">
-        <img src="/assets/cherry-scheduler-logo.png?v=2" width="30" height="30" alt="" />
+<body class="ab-page">
+  <a class="ab-skip" href="#noi-dung">Bỏ qua menu</a>
+
+  <div class="ab-topbar">
+    <div class="ab-container">
+      <div class="ab-topbar-contact">
+        <span>Điện thoại / Zalo: <a href="tel:+84352261815">0352 261 815</a></span>
+        <a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a>
+      </div>
+      <span class="ab-topbar-note">Hỗ trợ nhập dữ liệu cho trường mới</span>
+    </div>
+  </div>
+
+  <header class="ab-nav">
+    <div class="ab-container">
+      <a class="ab-brand" href="/">
+        <img src="/assets/cherry-scheduler-logo.png?v=2" width="34" height="34" alt="" />
         <span>Cherry Scheduler</span>
       </a>
-      <nav class="lp-nav-links" aria-label="Main">
-        <a href="/about" aria-current="page">About</a>
-        <a href="/privacy">Privacy</a>
-        <a href="/terms">Terms</a>
+      <nav class="ab-nav-links" aria-label="Mục trên trang">
+        <a href="#tinh-nang">Tính năng</a>
+        <a href="#phan-mem">Phần mềm</a>
+        <a href="#bat-dau">Cách bắt đầu</a>
+        <a href="#ve-chung-toi">Về chúng tôi</a>
+        <a href="#lien-he">Liên hệ</a>
       </nav>
-      <a class="lp-nav-cta" href="/#authCard">Đăng nhập</a>
+      <a class="ab-btn ab-btn-primary ab-btn-sm" href="/#authCard">Đăng nhập</a>
     </div>
   </header>
 
-  <main>
-    <section class="lp-page-hero">
-      <div class="lp-container">
-        <p class="lp-eyebrow">Company</p>
-        <h1>About Cherry Scheduler</h1>
-        <p>Cherry Scheduler is built by Cherry Software, a Vietnamese EdTech startup founded in December 2025. We build school timetable optimization software designed to reduce the complexity and manual effort involved in creating schedules for teachers and classes.</p>
-        <p style="margin-top:12px">Contact: <a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a></p>
+  <main id="noi-dung">
+    <section class="ab-hero">
+      <div class="ab-container">
+        <p class="ab-eyebrow">Phần mềm xếp thời khóa biểu trên web</p>
+        <h1>Thời khóa biểu cho cả trường, <em>đúng yêu cầu</em> của từng thầy cô</h1>
+        <p class="ab-hero-lead">Cherry Scheduler xếp thời khóa biểu tự động cho trường tiểu học, THCS và trung tâm GDNN-GDTX. Nhập phân công, chọn yêu cầu của giáo viên và môn học, bấm xếp; sau đó chỉnh tay bằng kéo-thả và xuất ra Excel.</p>
+        <div class="ab-cta-row">
+          <a class="ab-btn ab-btn-primary" href="/#authCard">Đăng ký trường</a>
+          <a class="ab-btn ab-btn-ghost" href="https://zalo.me/0352261815" target="_blank" rel="noopener">Nhắn Zalo tư vấn</a>
+        </div>
+        <div class="ab-shot">
+          <div class="ab-shot-bar" aria-hidden="true"><span></span><span></span><span></span><small>tkbcherry.com · Sắp xếp TKB</small></div>
+          <img src="/assets/about/tkb-planner.jpg" width="1600" height="721" alt="Màn Sắp xếp của Cherry Scheduler: thời khóa biểu lớp 6/1 và bảng Thống kê báo 627 tiết đã xếp, 0 tiết chưa xếp" fetchpriority="high" />
+        </div>
       </div>
     </section>
 
-    <article class="lp-prose">
-      <h2>The problem we work on</h2>
-      <p>School timetabling is a constraint optimization problem involving teacher availability, class conflicts, subject requirements, teaching workloads, session limits, and many school-specific rules.</p>
-      <p>Cherry Scheduler is being developed to make this process faster, easier to manage, and more accessible to school administrators.</p>
-
-      <h2>What Cherry Scheduler does</h2>
-      <ul>
-        <li>Lets schools enter classes, teachers, subjects and teaching assignments in one place.</li>
-        <li>Captures scheduling rules such as teacher availability, subject requirements, session limits and school-specific constraints.</li>
-        <li>Generates feasible timetables with a constraint-based scheduling and optimization engine, then improves timetable quality by reducing unnecessary teacher sessions and gaps.</li>
-        <li>Lets administrators review and adjust timetables and export them to Excel or Word.</li>
-      </ul>
-
-      <h2>How we build</h2>
-      <p>Cherry Scheduler runs in production on a Rust backend, a Python OR-Tools CP-SAT solver on Google Cloud Run, and a drag-and-drop web planner. It is verified on a school of 75 classes, 125 teachers and about 2,200 lessons per week.</p>
-      <p>The product is developed by a solo founder working with Claude Code, Anthropic's AI coding assistant, to build, test and ship the software and to prepare each school's data from its raw spreadsheets.</p>
-      <p>Next, we are exploring Claude-powered onboarding inside the product: importing school spreadsheets, turning teachers' written requests into scheduling constraints, and explaining in plain language why a timetable is infeasible. These AI features are not part of the product yet.</p>
-
-      <h2>Company information</h2>
-      <dl class="lp-facts">
-        <dt>Team</dt>
-        <dd>Cherry Software</dd>
-        <dt>Product</dt>
-        <dd>Cherry Scheduler</dd>
-        <dt>Founder</dt>
-        <dd>Nguyen Hoang An <span lang="vi">(Nguyễn Hoàng Ân)</span>, Founder &amp; CEO · <a href="https://www.linkedin.com/in/an-nguyen-1b4133442/" target="_blank" rel="noopener">LinkedIn</a> · <a href="mailto:an@tkbcherry.com">an@tkbcherry.com</a></dd>
-        <dt>Founded</dt>
-        <dd>December 2025</dd>
-        <dt>Location</dt>
-        <dd>Ho Chi Minh City, Vietnam</dd>
-        <dt>Stage</dt>
-        <dd>Bootstrapped / Early-stage</dd>
-        <dt>Contact</dt>
-        <dd><a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a></dd>
-        <dt>Website</dt>
-        <dd><a href="https://tkbcherry.com">https://tkbcherry.com</a></dd>
-      </dl>
-
-      <h2>Contact</h2>
-      <p>For questions about Cherry Scheduler, partnerships or support, email <a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a>.</p>
-
-      <div class="lp-vi" lang="vi">
-        <strong>Tiếng Việt</strong>
-        <p>Cherry Scheduler là sản phẩm của Cherry Software, startup EdTech của Việt Nam, thành lập tháng 12/2025 tại TP. Hồ Chí Minh, phát triển phần mềm xếp và tối ưu thời khóa biểu cho nhà trường. Người sáng lập: Nguyen Hoang An. Liên hệ: <a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a>.</p>
+    <section class="ab-stats" aria-label="Số liệu">
+      <div class="ab-container">
+        <dl class="ab-stats-grid">
+          <div class="ab-stat"><dt>loại yêu cầu xếp lịch</dt><dd>27</dd></div>
+          <div class="ab-stat"><dt>trường lớn nhất đã xếp đủ tiết</dt><dd>75 lớp</dd></div>
+          <div class="ab-stat"><dt>tiết mỗi tuần ở trường đó</dt><dd>~2.200</dd></div>
+          <div class="ab-stat"><dt>cho mỗi lượt xếp hoặc tối ưu</dt><dd>1–3 phút</dd></div>
+        </dl>
       </div>
-    </article>
+    </section>
+
+    <section class="ab-section" id="tinh-nang">
+      <div class="ab-container">
+        <div class="ab-head">
+          <p class="ab-kicker">Tính năng</p>
+          <h2>Từ file Excel của trường đến thời khóa biểu in ra</h2>
+          <p>Mọi bước nằm trong một phần mềm trên trình duyệt, không cần cài đặt.</p>
+        </div>
+        <div class="ab-cards">
+          <article class="ab-card">
+            <div class="ab-card-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></svg>
+            </div>
+            <h3>Nhập dữ liệu từ Excel</h3>
+            <p>Khối, lớp, giáo viên, môn học, tiết chuẩn và phân công nhập từ file của trường. Chưa quen, gửi file cho chúng tôi nhập giúp.</p>
+          </article>
+          <article class="ab-card">
+            <div class="ab-card-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg>
+            </div>
+            <h3>27 loại yêu cầu</h3>
+            <p>Giới hạn ngày và buổi dạy, tiết học xếp liền, môn không học cùng buổi, giáo viên dạy hai ca hoặc nhiều cơ sở, ô cố định như Chào cờ.</p>
+          </article>
+          <article class="ab-card">
+            <div class="ab-card-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>
+            </div>
+            <h3>Xếp tự động bằng Cherry</h3>
+            <p>Bộ giải ràng buộc OR-Tools CP-SAT xếp cả trường trong vài phút, ưu tiên xếp đủ tiết và giữ đúng các yêu cầu bắt buộc.</p>
+          </article>
+          <article class="ab-card">
+            <div class="ab-card-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 6-6"/></svg>
+            </div>
+            <h3>Gọn buổi, ít tiết trống</h3>
+            <p>Nút Tối ưu giảm số buổi giáo viên chỉ dạy 1 tiết và các tiết trống giữa buổi, mà không làm hỏng yêu cầu đã đạt.</p>
+          </article>
+          <article class="ab-card">
+            <div class="ab-card-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3"/><path d="M2 12h20M12 2v20"/></svg>
+            </div>
+            <h3>Chỉnh tay bằng kéo-thả</h3>
+            <p>Kéo một tiết sang ô khác, hoặc thả đè để đổi chỗ hai tiết. Bảng Thống kê cập nhật ngay số tiết chưa xếp, buổi 1 tiết, tiết trống.</p>
+          </article>
+          <article class="ab-card">
+            <div class="ab-card-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
+            </div>
+            <h3>In và xuất file</h3>
+            <p>Thời khóa biểu từng lớp, từng giáo viên, từng phòng và TKB toàn trường ra Excel để in và gửi giáo viên; xuất file cho CSDL ngành.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="ab-section ab-section--soft" id="phan-mem">
+      <div class="ab-container">
+        <div class="ab-head">
+          <p class="ab-kicker">Phần mềm thực tế</p>
+          <h2>Ảnh chụp từ Cherry Scheduler</h2>
+        </div>
+        <div class="ab-tabs" role="tablist" aria-label="Chọn màn hình" hidden>
+          <button class="ab-tab" type="button" role="tab" id="tab-yeucau" aria-controls="shot-yeucau" aria-selected="true">Yêu cầu</button>
+          <button class="ab-tab" type="button" role="tab" id="tab-phancong" aria-controls="shot-phancong" aria-selected="false" tabindex="-1">Phân công</button>
+          <button class="ab-tab" type="button" role="tab" id="tab-in" aria-controls="shot-in" aria-selected="false" tabindex="-1">In TKB</button>
+        </div>
+        <div class="ab-gallery">
+          <figure class="ab-figure" id="shot-yeucau" role="tabpanel" aria-labelledby="tab-yeucau" data-active="true">
+            <div class="ab-shot">
+              <div class="ab-shot-bar" aria-hidden="true"><span></span><span></span><span></span><small>Yêu cầu của giáo viên</small></div>
+              <img src="/assets/about/tkb-rules.jpg" width="1200" height="833" loading="lazy" alt="Menu Yêu cầu của giáo viên: giới hạn ngày và buổi dạy, giáo viên dạy 2 ca, giáo viên dạy nhiều địa điểm, vị trí bắt buộc" />
+            </div>
+            <figcaption><strong>Yêu cầu.</strong> Yêu cầu của giáo viên (ngày và buổi dạy, dạy hai ca, dạy nhiều địa điểm), của môn học (tiết liền, học cách ngày, không cùng buổi) và các ô cố định.</figcaption>
+          </figure>
+          <figure class="ab-figure" id="shot-phancong" role="tabpanel" aria-labelledby="tab-phancong" data-active="false">
+            <div class="ab-shot">
+              <div class="ab-shot-bar" aria-hidden="true"><span></span><span></span><span></span><small>Phân công</small></div>
+              <img src="/assets/about/tkb-assignment.jpg" width="1600" height="829" loading="lazy" alt="Màn Phân công của lớp 6/1: bảng môn học, giáo viên, số tiết và giới hạn, khung Thêm nhanh bên phải" />
+            </div>
+            <figcaption><strong>Phân công.</strong> Mỗi lớp một bảng môn học, giáo viên, số tiết; khung Thêm nhanh để gán môn và giáo viên mà không phải gõ lại.</figcaption>
+          </figure>
+          <figure class="ab-figure" id="shot-in" role="tabpanel" aria-labelledby="tab-in" data-active="false">
+            <div class="ab-shot">
+              <div class="ab-shot-bar" aria-hidden="true"><span></span><span></span><span></span><small>In TKB</small></div>
+              <img src="/assets/about/tkb-print.jpg" width="1200" height="762" loading="lazy" alt="Menu In TKB: TKB lớp học, TKB giáo viên, TKB phòng, TKB toàn trường theo lớp học hoặc giáo viên, Xuất CSDL ngành" />
+            </div>
+            <figcaption><strong>In TKB.</strong> Thời khóa biểu từng lớp, từng giáo viên, từng phòng, TKB toàn trường theo lớp hoặc theo giáo viên, và file xuất cho CSDL ngành.</figcaption>
+          </figure>
+        </div>
+        <p class="ab-gallery-note">Ảnh chụp với dữ liệu mẫu 22 lớp; tên giáo viên trong ảnh là tên giả.</p>
+      </div>
+    </section>
+
+    <section class="ab-section" id="bat-dau">
+      <div class="ab-container">
+        <div class="ab-head">
+          <p class="ab-kicker">Cách bắt đầu</p>
+          <h2>Bốn bước để có thời khóa biểu</h2>
+        </div>
+        <ol class="ab-steps">
+          <li>
+            <h3>Đăng ký trường</h3>
+            <p>Tạo tài khoản trường trên tkbcherry.com bằng email và số điện thoại. Xác thực email để dùng đủ tính năng 30 ngày miễn phí.</p>
+          </li>
+          <li>
+            <h3>Nhập dữ liệu</h3>
+            <p>Nhập lớp, giáo viên và phân công từ Excel, hoặc gửi file qua Zalo, email để chúng tôi nhập giúp.</p>
+          </li>
+          <li>
+            <h3>Đặt yêu cầu</h3>
+            <p>Chọn yêu cầu của giáo viên, môn học và các ô cố định như Chào cờ, Sinh hoạt lớp.</p>
+          </li>
+          <li>
+            <h3>Xếp, chỉnh và in</h3>
+            <p>Bấm Cherry, xem bảng Thống kê, kéo-thả chỉnh những chỗ cần đổi rồi xuất Excel.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="ab-section ab-section--soft" id="ve-chung-toi">
+      <div class="ab-container">
+        <div class="ab-about">
+          <div class="ab-about-copy">
+            <p class="ab-kicker">Về chúng tôi</p>
+            <h2 class="ab-h2">Làm ra từ thời khóa biểu thật của các trường</h2>
+            <p>Cherry Scheduler do Nguyễn Hoàng Ân bắt đầu phát triển từ tháng 12/2025 tại TP. Hồ Chí Minh. Nhiều tính năng hiện có ra đời từ yêu cầu cụ thể của các trường đang dùng: giáo viên dạy ở hai cơ sở, tiết dạy ghép nhiều lớp, môn liên kết buổi chiều, phòng Tin học dùng chung.</p>
+            <h3>Cách chúng tôi làm phần mềm</h3>
+            <p>Máy chủ viết bằng Rust. Bộ giải dùng OR-Tools CP-SAT, chạy trên máy chủ hoặc ngay trên máy tính Windows của trường qua Cherry Agent.</p>
+            <p>Phần mềm do một người phát triển, dùng Claude Code, trợ lý lập trình AI của Anthropic, để viết mã, kiểm thử và chuẩn bị dữ liệu của từng trường từ file Excel. Bản thân phần mềm chưa dùng AI khi xếp thời khóa biểu.</p>
+          </div>
+          <dl class="ab-facts">
+            <div><dt>Sản phẩm</dt><dd>Cherry Scheduler</dd></div>
+            <div><dt>Nhóm</dt><dd>Cherry Software</dd></div>
+            <div><dt>Người sáng lập</dt><dd>Nguyễn Hoàng Ân · <a href="https://www.linkedin.com/in/an-nguyen-1b4133442/" target="_blank" rel="noopener">LinkedIn</a></dd></div>
+            <div><dt>Bắt đầu</dt><dd>Tháng 12/2025</dd></div>
+            <div><dt>Hình thức</dt><dd>Dự án độc lập của người sáng lập, tự đầu tư</dd></div>
+            <div><dt>Địa chỉ</dt><dd>424 đường Nhuận Đức, xã Nhuận Đức, TP. Hồ Chí Minh</dd></div>
+            <div><dt>Điện thoại / Zalo</dt><dd><a href="tel:+84352261815">0352 261 815</a></dd></div>
+            <div><dt>Email</dt><dd><a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a></dd></div>
+            <div><dt>Website</dt><dd><a href="https://tkbcherry.com">tkbcherry.com</a></dd></div>
+          </dl>
+        </div>
+
+        <div class="ab-en" lang="en">
+          <h3>In English</h3>
+          <p>Cherry Scheduler is a web app that builds school timetables for primary schools, lower secondary schools and continuing-education centres in Vietnam. Schools enter classes, teachers and teaching assignments, choose from 27 kinds of teacher and subject rules, and generate the timetable with a Rust backend and an OR-Tools CP-SAT solver, then adjust it by drag and drop and export it to Excel or Word. The largest school scheduled so far has 75 classes, 125 teachers and about 2,200 lessons a week.</p>
+          <p>It is an independent, self-funded project started in December 2025 by Nguyen Hoang An in Ho Chi Minh City, built with Claude Code. Claude is not part of the product yet. Contact: <a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a> · founder: <a href="mailto:an@tkbcherry.com">an@tkbcherry.com</a>.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="ab-cta" id="lien-he">
+      <div class="ab-container">
+        <h2>Chuẩn bị thời khóa biểu cho học kỳ mới?</h2>
+        <p>Đăng ký tài khoản trường để dùng thử, hoặc gọi, nhắn Zalo 0352 261 815 để được hướng dẫn nhập dữ liệu.</p>
+        <div class="ab-cta-row">
+          <a class="ab-btn ab-btn-primary" href="/#authCard">Đăng ký trường</a>
+          <a class="ab-btn ab-btn-ghost" href="https://zalo.me/0352261815" target="_blank" rel="noopener">Nhắn Zalo</a>
+          <a class="ab-btn ab-btn-ghost" href="mailto:contact@tkbcherry.com">Gửi email</a>
+        </div>
+      </div>
+    </section>
   </main>
 
-  <footer class="lp-footer">
-    <div class="lp-container lp-footer-inner">
-      <div class="lp-footer-brand">
-        <strong>Cherry Scheduler</strong>
-        <span>School timetable optimization · Ho Chi Minh City, Vietnam</span>
+  <footer class="ab-footer">
+    <div class="ab-container">
+      <div class="ab-footer-grid">
+        <div>
+          <a class="ab-brand" href="/">
+            <img src="/assets/cherry-scheduler-logo.png?v=2" width="34" height="34" alt="" />
+            <span>Cherry Scheduler</span>
+          </a>
+          <p>Phần mềm xếp thời khóa biểu tự động cho trường tiểu học, THCS và trung tâm GDNN-GDTX. Xếp nhanh, chuẩn xác – Nhàn hơn mỗi ngày.</p>
+        </div>
+        <div>
+          <h2>Liên kết</h2>
+          <ul>
+            <li><a href="/about">Giới thiệu</a></li>
+            <li><a href="/#authCard">Đăng nhập / Đăng ký trường</a></li>
+            <li><a href="/privacy">Chính sách bảo mật</a></li>
+            <li><a href="/terms">Điều khoản sử dụng</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2>Liên hệ</h2>
+          <ul>
+            <li>424 đường Nhuận Đức, xã Nhuận Đức, TP. Hồ Chí Minh</li>
+            <li>Điện thoại: <a href="tel:+84352261815">0352 261 815</a> · <a href="https://zalo.me/0352261815" target="_blank" rel="noopener">Zalo</a></li>
+            <li>Email: <a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a></li>
+          </ul>
+        </div>
       </div>
-      <nav class="lp-footer-links" aria-label="Company">
-        <a href="/about" aria-current="page">About</a>
-        <a href="/privacy">Privacy Policy</a>
-        <a href="/terms">Terms of Service</a>
-      </nav>
-      <div class="lp-footer-bottom">
-        <p>© 2026 Cherry Scheduler</p>
-        <p class="lp-footer-contact">Contact: <a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a></p>
-      </div>
+      <div class="ab-footer-bottom">© 2026 Cherry Scheduler · Cherry Software</div>
     </div>
   </footer>
+
+  <script>
+  (function(){
+    var tabs = document.querySelector(".ab-tabs");
+    if(!tabs) return;
+    var buttons = Array.prototype.slice.call(tabs.querySelectorAll(".ab-tab"));
+    function select(btn, focus){
+      buttons.forEach(function(b){
+        var on = b === btn;
+        b.setAttribute("aria-selected", on ? "true" : "false");
+        b.tabIndex = on ? 0 : -1;
+        var panel = document.getElementById(b.getAttribute("aria-controls"));
+        if(panel) panel.setAttribute("data-active", on ? "true" : "false");
+      });
+      if(focus) btn.focus();
+    }
+    buttons.forEach(function(b, i){
+      b.addEventListener("click", function(){ select(b, false); });
+      b.addEventListener("keydown", function(e){
+        var next = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : null;
+        if(next === null) return;
+        e.preventDefault();
+        select(buttons[(next + buttons.length) % buttons.length], true);
+      });
+    });
+    tabs.hidden = false;
+    document.documentElement.classList.add("ab-js");
+  })();
+  </script>
 </body>
 </html>

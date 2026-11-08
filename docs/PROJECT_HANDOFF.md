@@ -9,6 +9,33 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-08 TRANG GIỚI THIỆU /about LÀM LẠI THEO BỐ CỤC qtm.vn + LINK "GIỚI THIỆU" Ở TRANG CHỦ (CHƯA DEPLOY)
+
+- **Chủ dự án**: "tham khảo qtm.vn thiết kế lại web chúng ta biết đâu đăng ký được startup". Đã nói rõ: đơn Claude Startups bị
+  từ chối vì chưa có pháp nhân để xác minh, trang đẹp hơn không đổi được điều đó (qtm.vn cũng không ghi MST). Chủ dự án chọn:
+  **trang chủ giữ trang đăng nhập gọn (02/11)**, làm lại `/about` theo bố cục qtm.vn; chỉ dùng số liệu thật, ý kiến thầy cô thật
+  (chưa gửi → chưa có mục này), ảnh chụp phần mềm với dữ liệu mẫu; **chưa có pháp nhân** → ghi "dự án độc lập của người sáng lập,
+  tự đầu tư", không ghi "startup thành lập 12/2025", JSON-LD bỏ `foundingDate`.
+- **`web/about/index.html`** (viết lại, tiếng Việt + khối "In English") + **`web/about/about.css`** (mới, lớp `ab-*`, font Be Vietnam Pro
+  vì Outfit thiếu bộ chữ tiếng Việt): thanh liên hệ trên cùng → menu dính → hero + ảnh màn Sắp xếp → dải số liệu → 6 thẻ tính năng →
+  ảnh phần mềm theo tab (Yêu cầu / Phân công / In TKB, không JS thì hiện cả 3) → 4 bước bắt đầu → Về chúng tôi + bảng thông tin →
+  lời mời liên hệ → chân trang 3 cột. `public-site.css` không đổi (privacy/terms vẫn dùng).
+- **Số liệu trên trang đều kiểm được**: 27 loại yêu cầu (đếm menu Yêu cầu: 11 GV + 12 môn + 3 cố định + 1 giới hạn số tiết/thời điểm),
+  75 lớp / ~2.200 tiết/tuần (trường lớn nhất, đã ghi từ 07/10), ⏱ 1–3 phút/lượt. **Số trường/lớp đang dùng CHƯA có**: classifier chặn
+  Claude đọc kho production → chủ dự án chạy `python scratch/about-deploy/stats.py` (chỉ đọc, sqlite `mode=ro`, đã thử trên DB giả
+  cùng cấu trúc), duyệt con số rồi mới thêm lên trang.
+- **Ảnh** `web/assets/about/tkb-{planner,rules,assignment,print}.jpg` (JPEG vì Rust `is_public_static_file` không phục vụ .webp):
+  chụp từ app thật chạy cục bộ — `rust_api/target/release/tkb_rust_api.exe` (bản 17/08) với `TKB_APP_ROOT`=repo, `TKB_DB_PATH` ở
+  scratchpad, cổng 2399; trường mẫu = `rust_api/fixtures/sample-data.json` (22 lớp) **đổi toàn bộ 43 tên/mã GV sang tên giả**
+  (kiểm 0 mã/tên cũ còn sót), xếp bằng ▶ FET trong trình duyệt (627/627 tiết); chụp Chrome headless 2x qua CDP.
+- **Trang chủ** `web/index.html`: nút "Giới thiệu phần mềm →" dưới khẩu hiệu + "Giới thiệu" ở chân trang; CSS `.auth-home .auth-about-link`
+  trong `web/auth.css` (chỉ thêm). Thẻ đăng nhập/đăng ký không đổi.
+- **Kiểm**: Chrome headless 1254×700 (2x) và 390×844 mobile: không tràn ngang (scrollWidth = 390), tab ảnh đổi đúng, font tiếng Việt nạp.
+  `run_tests.py` cây chính: đúng 6 [MOI HONG] cũ của 02/11 (phanmon.js CRLF); worktree sạch HEAD + đúng các file này: 145 pass / 22 fail,
+  "Khong co test nao moi hong so voi moc chuan". Không test nào đọc `web/about/` (chỉ `auth_mobile_layout_node` đọc `auth.css`, fail sẵn).
+- **Deploy (chưa chạy)**: `python scratch/about-deploy/run.py` — preflight rồi `deploy-files.py deploy about-20261108 --no-restart` 8 file
+  (3 sửa + 5 mới). Rollback 3 file sửa: `python deploy.py files rollback about-20261108 web/index.html web/auth.css web/about/index.html`.
+
 ## 2026-11-08 CHERRY AGENT TRÊN MÁY KHÁC: CHROME CHẶN/HỎI QUYỀN "ỨNG DỤNG TRÊN THIẾT BỊ" (ĐÃ DEPLOY) + KÝ SỐ CHERRY.EXE
 
 - **Chủ dự án**: "Cherry.exe trên máy khác: Chrome chặn cài đặt và đường dẫn check theo máy của tôi" → "dùng chứng chỉ ký số
