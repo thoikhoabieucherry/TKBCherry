@@ -9,7 +9,7 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
-## 2026-11-09 CHỮA CHÁY: TẢI Cherry.zip THAY Cherry.exe — CHỜ CHỦ DỰ ÁN CHẠY `run.py`
+## 2026-11-09 CHỮA CHÁY: TẢI Cherry.zip THAY Cherry.exe — ĐÃ DEPLOY (Netlify + tkbcherry.com)
 
 - **Chủ dự án**: "chữa cháy bằng cách thay vì tải trực tiếp exe thì đóng gói nó vào zip thử" (Cherry.exe chưa ký số, nhiều máy/trình duyệt
   chặn tải .exe). Hướng lâu dài là Microsoft Store (MSIX do Microsoft ký): đăng ký nhà phát triển cá nhân bị lỗi 400 phía Microsoft ở bước
@@ -31,6 +31,9 @@
 - **Chủ dự án chạy**: `python scratch/cherry-zip/run.py` → (1) publish nháp Netlify + kiểm sha1 zip/bridge trên trang thật, (2) `deploy-files.py`
   preflight + deploy bridge (backup `cherry-zip-20261109`, `--no-restart`). Rollback tkbcherry.com:
   `python deploy.py files rollback cherry-zip-20261109 web/pages/tkb-rust-bridge.js`; rollback Netlify: restore deploy `6ae4072712ca1de0088e922a`.
+- **ĐÃ DEPLOY 09/11** (chủ dự án chạy `! python scratch/cherry-zip/run.py`): Netlify đăng `6af1e5fe…`, sha1 Cherry.zip + bridge Netlify
+  trên trang thật khớp bản dựng; tkbcherry.com bridge remote trước `f323d790…` (= bản 08/11) → `bd3998d5…`, sha256 live == stage. `/` → `/app`,
+  `/api/health` 200 trên Netlify sau khi đăng.
 - **Giới hạn**: zip chỉ tránh được chặn TẢI file .exe (bộ lọc trình duyệt/mạng/diệt virus chặn theo đuôi). Giải nén ra vẫn mang Mark of the Web
   → SmartScreen vẫn hỏi (More info → Run anyway); máy bật Smart App Control vẫn chặn exe/.pyd chưa ký. Hết hẳn chỉ khi ký số (Store/OV).
 
