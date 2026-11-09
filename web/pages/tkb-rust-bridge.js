@@ -1430,7 +1430,9 @@
   // V2 (31/10 khuya): popup rut gon — ai da thay ban dai (V1) cung duoc thay ban ngan mot lan.
   const AGENT_ANNOUNCE_KEY = "TKB_AGENT_ANNOUNCE_V2";
   // Trang tkbcherry.com chua co ban cai Cherry.exe -> tai tu trang Netlify (cung ban tu cap nhat).
-  const AGENT_DOWNLOAD_URL = "https://tkbcherry.netlify.app/download/Cherry.exe";
+  // 09/11 (chu du an: "thay vi tai truc tiep exe thi dong goi no vao zip"): Cherry.exe chua ky so,
+  // nhieu may/trinh duyet chan tai .exe -> tai Cherry.zip (chi chua dung Cherry.exe do).
+  const AGENT_DOWNLOAD_URL = "https://tkbcherry.netlify.app/download/Cherry.zip";
 
   function agentPage(){
     return pageHasSolverServer() && !pageHasServerSwitch();
@@ -1706,7 +1708,8 @@
      tai file va cai"): ban web KHONG dang nhap chi con MOT nut Cherry. Cham nho tren nut = trang
      thai bo giai tren may (xanh/vang). Bam Cherry ma chua co bo giai -> hop huong dan tai
      CherrySetup.exe (/download/CherrySetup.exe cung trang) + tu do moi 3 s, cai xong bao san sang. */
-  const LOCAL_SOLVER_DOWNLOAD_URL_DEFAULT = "/download/Cherry.exe";
+  const LOCAL_SOLVER_DOWNLOAD_URL_DEFAULT = "/download/Cherry.zip";
+  const LOCAL_SOLVER_DOWNLOAD_NAME = "Cherry.zip";
   const LOCAL_SOLVER_SEEN_KEY = "TKB_LOCAL_SOLVER_SEEN_V1";
   const LOCAL_INSTALL_POLL_MS = 3000;
   const LOCAL_INSTALL_POLL_MAX_MS = 15 * 60 * 1000;
@@ -1883,11 +1886,11 @@
     const download = el("a", starting ? "" : "lsi-primary", starting ? "Chưa có? Tải Cherry.exe" : "Tải về Cherry.exe");
     download.id = "tkbLocalSolverDownload";
     download.href = localSolverDownloadUrl();
-    download.setAttribute("download", "Cherry.exe");
+    download.setAttribute("download", LOCAL_SOLVER_DOWNLOAD_NAME);
     download.addEventListener("click", () => {
       // Dang cai -> hop "Dang bat..." khong duoc tu doi sang "Thu bat lai" giua chung.
       localInstallStartingUntil = 0;
-      setLocalInstallStatus("Đang chờ… Mở file Cherry.exe vừa tải (Windows cảnh báo thì More info → Run anyway). Cherry chạy lên là trang tự xếp tiếp.", false);
+      setLocalInstallStatus("Đang chờ… Mở file Cherry.zip vừa tải, bấm đúp Cherry.exe bên trong (Windows hỏi thì chọn Run; cảnh báo thì More info → Run anyway). Cherry chạy lên là trang tự xếp tiếp.", false);
       startLocalInstallPolling();
     });
     // 31/10 (chu du an: "luc chua mo Agent ma co Agent trong may roi thi cu keu nguoi dung doi thoi,
@@ -1940,7 +1943,7 @@
         : "Để dùng nút Cherry, máy này cần Cherry.exe — đã gói sẵn mọi thứ, không cần cài thêm gì, không cần quyền quản trị."));
       const steps = el("ol");
       steps.appendChild(el("li", "", "Bấm Tải về (khoảng 100 MB, chỉ tải một lần)."));
-      steps.appendChild(el("li", "", "Mở file Cherry.exe vừa tải. Windows cảnh báo thì bấm More info → Run anyway."));
+      steps.appendChild(el("li", "", "Mở file Cherry.zip vừa tải, bấm đúp Cherry.exe bên trong. Windows hỏi thì chọn Run; cảnh báo thì bấm More info → Run anyway."));
       steps.appendChild(el("li", "", "Đợi khoảng 1 phút — biểu tượng 🍒 hiện cạnh đồng hồ và trang này tự xếp tiếp."));
       card.appendChild(steps);
       card.appendChild(el("p", "", agentPage() ? "Đã cài rồi mà Chrome hỏi “Mở …?” thì bấm Mở — trang tự xếp tiếp." : "Máy này đã cài rồi mà Chrome hỏi “Mở …?” thì bấm Mở — trang tự xếp tiếp."));

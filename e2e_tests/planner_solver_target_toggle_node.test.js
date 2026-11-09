@@ -145,7 +145,7 @@ function health(url){
 // 31/10: trang tkbcherry.com — cong tac "Agent" (Cherry.exe mac dinh tren may Windows; Mac / dien thoai may chu).
 const MAC = {userAgent:"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 Chrome/142", maxTouchPoints:0};
 const PHONE = {userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0) Mobile Safari", maxTouchPoints:5};
-const NETLIFY_DOWNLOAD = "https://tkbcherry.netlify.app/download/Cherry.exe";
+const NETLIFY_DOWNLOAD = "https://tkbcherry.netlify.app/download/Cherry.zip";
 
 function allText(node){
   if(!node) return "";
@@ -576,10 +576,10 @@ test("bản không đăng nhập: chưa có bộ giải -> hộp tải Cherry.ex
   const modal = hooks.showLocalSolverDialog();
   assert.ok(modal && modal.hidden === false);
   const link = document.getElementById("tkbLocalSolverDownload");
-  assert.equal(link.href, "/download/Cherry.exe");
-  assert.equal(link.getAttribute("download"), "Cherry.exe");
+  assert.equal(link.href, "/download/Cherry.zip");
+  assert.equal(link.getAttribute("download"), "Cherry.zip");
   link.click();
-  assert.match(document.getElementById("tkbLocalSolverInstallStatus").textContent, /Mở file Cherry\.exe vừa tải/);
+  assert.match(document.getElementById("tkbLocalSolverInstallStatus").textContent, /Mở file Cherry\.zip vừa tải, bấm đúp Cherry\.exe bên trong/);
   online = true;  // người dùng vừa cài xong
   await new Promise(r => setTimeout(r, 3400));
   assert.match(document.getElementById("tkbLocalSolverInstallStatus").textContent, /Đã sẵn sàng/);

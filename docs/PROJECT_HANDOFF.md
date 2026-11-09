@@ -9,6 +9,31 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-09 CHỮA CHÁY: TẢI Cherry.zip THAY Cherry.exe — CHỜ CHỦ DỰ ÁN CHẠY `run.py`
+
+- **Chủ dự án**: "chữa cháy bằng cách thay vì tải trực tiếp exe thì đóng gói nó vào zip thử" (Cherry.exe chưa ký số, nhiều máy/trình duyệt
+  chặn tải .exe). Hướng lâu dài là Microsoft Store (MSIX do Microsoft ký): đăng ký nhà phát triển cá nhân bị lỗi 400 phía Microsoft ở bước
+  cuối (`PartnerIntegrationService … 400`, nhiều nước gặp từ cuối 10/2026) — đã gửi thư `storesupport@service.microsoft.com` 09/11, chờ trả lời.
+- **`Cherry.zip`** chỉ chứa đúng `Cherry.exe` đang đăng (build 20261030-014806-b014f8da, sha1 `ddc252fa…`); zip 93.644.214 byte, sha1 `27d214c5…`.
+  `/download/Cherry.exe` + `cherry-latest.json` + gói app tự cập nhật GIỮ NGUYÊN (máy đã cài vẫn tự cập nhật như cũ).
+- **Bridge** (`web/pages/tkb-rust-bridge.js`): `AGENT_DOWNLOAD_URL` + `LOCAL_SOLVER_DOWNLOAD_URL_DEFAULT` → `…/download/Cherry.zip`, thuộc tính
+  `download` = `Cherry.zip`, hướng dẫn "Mở file Cherry.zip vừa tải, bấm đúp Cherry.exe bên trong. Windows hỏi thì chọn Run…". Nút vẫn ghi
+  "Tải về Cherry.exe". Test `planner_solver_target_toggle_node` 39/39. `run_tests.py`: 6 test JS "mới hỏng" (`planner_ghep_stale_pin`,
+  `planner_teacher_code_nfc`, `planner_constraint_audit_stale_class`, `planner_fixed_chao_co_survives_load`, `planner_lesson_block_*`) hỏng y hệt
+  trên HEAD trước khi sửa — không do thay đổi này.
+- **Netlify** (site `tkbcherry`): bản NHÁP `6af1e5fe276f5d5f3d347615` = 69 file bản đang đăng (`6ae40727…`, 30/10) + `/download/Cherry.zip` + bridge
+  Netlify (bản đang đăng sửa đúng 4 chuỗi như trên) + `_redirects`/`_headers` dựng lại từ `build_netlify.py` ở `de07534` (thư mục build `cmnweb19`
+  đã mất). Đã so nháp với trang thật: chuyển hướng `/`, `/login`, `/super-admin`… → `/app`, `/api/health` proxy, header bảo mật, `/download/*`
+  attachment — giống hệt. Tạo bằng API Netlify (`scratch/cherry-zip/nf.py`, token từ đăng nhập `netlify` CLI, không in). Auto mode CHẶN Claude
+  publish (restore) bản nháp.
+- **tkbcherry.com**: stage `scratch/cherry-zip/stage/` = bridge live (tải bằng curl, bỏ CR) ghép 3 chiều với phần sửa; kiểm
+  diff(bản mới, bản deploy) == diff(HEAD, live) (live vẫn thiếu f3679c3).
+- **Chủ dự án chạy**: `python scratch/cherry-zip/run.py` → (1) publish nháp Netlify + kiểm sha1 zip/bridge trên trang thật, (2) `deploy-files.py`
+  preflight + deploy bridge (backup `cherry-zip-20261109`, `--no-restart`). Rollback tkbcherry.com:
+  `python deploy.py files rollback cherry-zip-20261109 web/pages/tkb-rust-bridge.js`; rollback Netlify: restore deploy `6ae4072712ca1de0088e922a`.
+- **Giới hạn**: zip chỉ tránh được chặn TẢI file .exe (bộ lọc trình duyệt/mạng/diệt virus chặn theo đuôi). Giải nén ra vẫn mang Mark of the Web
+  → SmartScreen vẫn hỏi (More info → Run anyway); máy bật Smart App Control vẫn chặn exe/.pyd chưa ký. Hết hẳn chỉ khi ký số (Store/OV).
+
 ## 2026-11-08 (lượt 2) TRANG CHỦ = TRANG GIỚI THIỆU + THẺ ĐĂNG NHẬP; /about CHUYỂN VỀ / — ĐÃ DEPLOY
 
 - **Chủ dự án**: "trang chủ là trang about luôn chứ ta :D" (sau khi deploy lượt 1 bên dưới).
