@@ -9,21 +9,23 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
-## 2026-11-11 THCS Lý Thường Kiệt TKB 4 (b5ace32aec4) — ĐÃ GHI, 7 lớp vi phạm KNS-AVBN liền kề
+## 2026-11-11 THCS Lý Thường Kiệt TKB 4 (b5ace32aec4) — CHƯA GHI, vá 5/7 vi phạm KNS-AVBN
 
 - **Áp dụng**: 16/11/2026. Yêu cầu từ `phancong/lythuongkiet/GỬI EM - TKB ÁP DỤNG 16.11.26.docx`.
-- **Script**: `scratch/ltk4/` — `data11.py`, `build11.py`, `store11.py`, `verify11.py`.
-- **Grid gốc**: `grid_ltk4_v2.json` (knsadj_w=800, tl=600, --combo), score B12 5814/B3 1873.
-- **Kho final**: `kho_b5ace32aec4_tkb4_dot11_7violkns_20261111.json` (256394 byte, 65 lớp 136 GV 1148 PCCM).
+- **Script**: `scratch/ltk4/` — `data11.py`, `build11.py`, `store11.py`, `verify11.py`, `repair13.py`.
+- **Grid solver**: `grid_ltk4_v2.json` (knsadj_w=800, tl=600, --combo) → `grid_ltk4_v3.json` (sau vá).
+- **Kho final**: `kho_b5ace32aec4_tkb4_final_20261111.json` (65 lớp 136 GV 1148 PCCM).
 - **Luật mới TKB 4** (đã cài vào solver):
-  1. KNS tiết đầu/cuối buổi (nosandwich) — HARD, tất cả lớp có KNS — **100% thỏa mãn**
+  1. KNS tiết đầu/cuối buổi (nosandwich) — HARD — **100% thỏa mãn**
   2. Stem tiết đầu/cuối buổi — HARD — **100% thỏa mãn**
-  3. KNS liền kề cặp AVBN (K6-8 avbn không bán trú) — SOFT penalty 800 — **19/26 thỏa mãn**
+  3. KNS liền kề cặp AVBN (K6-8 avbn không bán trú) — SOFT penalty 800 — **24/26 thỏa mãn** (vá thêm 5)
   4. K9 không bán trú: KNS chiều liền kề cặp GDTC — HARD — **100% thỏa mãn**
-- **7 lớp vi phạm KNS-AVBN**: 6/5, 6/9, 7/6, 7/8, 8/6, 8/8, 8/9 (ổn định qua 2 lần chạy với weight 400 và 800). Nguyên nhân: cấu trúc — không thể thỏa mãn đồng thời tất cả 26 lớp avbn (infeasible khi hard). KNS và AVBN đặt ở khác buổi/ngày cho các lớp này.
-- **Thay đổi khác**: AVBN pairs ở vị trí 1-2 cho avbn lớp được phép (`avoidBreakPair23.morning=false` trong kho); AVBN GV phan cong lại bằng CP-SAT để tránh trùng giờ; thêm KNS.6/7/8 (3 GV mới sang T7).
-- **Số liệu**: single=5, gap1=74, gap2=13, giữ TKB3=827/2176 (38%), GDTC dời=6 tiết (3 lớp).
-- **CHƯA GHI VÀO KHO** — cần chủ dự án chạy apply.py hoặc bấm vào kho.
+- **Vá 5/7 vi phạm bằng repair13.py (3-way swap)**:
+  - Vá: 7/6, 7/8, 8/6, 8/8, 8/9 — AVBN dời vào chiều cùng buổi KNS
+  - 2 bypass fixedOff: MT.An (thu3 chiều t1), GD.Hằng (thu6 chiều t1) — ô nghỉ riêng lẻ
+- **2 vi phạm còn lại — bất khả thi cấu trúc**: 6/5, 6/9 — thu7|sang|2 đã có đủ 5 lớp AVBN (pool 5 GV), thêm 2 lớp vượt quá sức chứa
+- **Số liệu gốc (v2)**: single=5, gap1=74, gap2=13, giữ TKB3=827/2176, GDTC dời=6 tiết
+- **CHƯA GHI VÀO KHO** — cần chủ dự án apply. Dùng `kho_b5ace32aec4_tkb4_final_20261111.json`
 
 ## 2026-11-09 CHỮA CHÁY: TẢI Cherry.zip THAY Cherry.exe — ĐÃ DEPLOY (Netlify + tkbcherry.com)
 
