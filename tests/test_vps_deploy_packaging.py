@@ -385,3 +385,35 @@ def test_install_and_update_have_no_retired_agent_download_route() -> None:
         assert "TKB_AGENT_DOWNLOAD_BEGIN" not in script
         assert "location /downloads/" not in script
         assert "application/vnd.microsoft.portable-executable" not in script
+
+
+def test_deploy_files_rejects_powershell_backslash_args() -> None:
+    """19/09: bash \\ line-cont on PowerShell becomes file arg -> C:\\ crash."""
+    path = ROOT / "tools" / "vps-deploy" / "deploy-files.py"
+    # Import without connecting: only load normalize helpers by exec of defs.
+    ns: dict = {"Path": Path, "__name__": "deploy_files_helpers"}
+    source = path.read_text(encoding="utf-8")
+    start = source.index("def normalize_rel")
+    end = source.index("def main")
+    exec(compile(source[start:end], str(path), "exec"), ns)
+    normalize_rel = ns["normalize_rel"]
+    assert normalize_rel("\\") is None
+    assert normalize_rel("\\\\") is None
+    assert normalize_rel("/") is None
+    assert normalize_rel("--no-restart") is None
+    assert normalize_rel("web/pages/phanmon.js") == "web/pages/phanmon.js"
+    assert normalize_rel(r"web\pages\phanmon.js") == "web/pages/phanmon.js"
+    assert normalize_rel(r"C:\Users\x") is None
+
+    proc = subprocess.run(
+        [sys.executable, str(path), "deploy", "ps-backslash-test", "\\", "\\\\", "--no-restart"],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 2
+    combined = proc.stdout + proc.stderr
+    assert "Thieu danh sach file" in combined
+    assert "FileNotFoundError" not in combined
+    assert "bo qua arg khong hop le" in combined

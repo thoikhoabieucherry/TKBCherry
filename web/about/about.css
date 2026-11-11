@@ -1,0 +1,887 @@
+/*
+ * Cherry Scheduler — trang Giới thiệu /about (08/11/2026).
+ * Bố cục tham khảo các trang giới thiệu doanh nghiệp Việt (thanh liên hệ, hero, dải số liệu,
+ * thẻ tính năng, ảnh phần mềm theo tab, các bước, lời mời liên hệ, chân trang 3 cột).
+ * Chỉ dùng lớp `ab-*`; không đụng thẻ đăng nhập, planner hay public-site.css.
+ */
+
+:root {
+  --ab-ink: #0f172a;
+  --ab-text: #1e293b;
+  --ab-muted: #475569;
+  --ab-subtle: #64748b;
+  --ab-line: #e2e8f0;
+  --ab-bg: #ffffff;
+  --ab-soft: #f8fafc;
+  --ab-cherry: #e11d48;
+  --ab-cherry-dark: #be123c;
+  --ab-cherry-soft: #fff1f2;
+  --ab-blue: #2563eb;
+  --ab-blue-dark: #1d4ed8;
+  --ab-blue-soft: #eff6ff;
+  --ab-radius: 16px;
+  --ab-max: 1180px;
+  --ab-gutter: clamp(16px, 4vw, 40px);
+  --ab-nav-h: 64px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--ab-nav-h) + 16px);
+  -webkit-text-size-adjust: 100%;
+}
+
+body.ab-page {
+  margin: 0;
+  background: var(--ab-bg);
+  color: var(--ab-text);
+  font-family: "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.65;
+  overflow-x: hidden;
+}
+
+.ab-page img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.ab-page a {
+  color: var(--ab-blue);
+}
+
+.ab-container {
+  max-width: var(--ab-max);
+  margin: 0 auto;
+  padding: 0 var(--ab-gutter);
+}
+
+.ab-skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+}
+
+.ab-skip:focus {
+  left: 16px;
+  top: 8px;
+  z-index: 100;
+  background: #fff;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+/* ── Thanh liên hệ trên cùng ── */
+.ab-topbar {
+  background: var(--ab-ink);
+  color: #cbd5e1;
+  font-size: 0.86rem;
+}
+
+.ab-topbar .ab-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 38px;
+}
+
+.ab-topbar a {
+  color: #f1f5f9;
+  text-decoration: none;
+}
+
+.ab-topbar a:hover {
+  text-decoration: underline;
+}
+
+.ab-topbar-contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+}
+
+.ab-topbar-note {
+  color: #94a3b8;
+}
+
+/* ── Menu ── */
+.ab-nav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: rgb(255 255 255 / 95%);
+  border-bottom: 1px solid var(--ab-line);
+  backdrop-filter: saturate(1.4) blur(8px);
+  -webkit-backdrop-filter: saturate(1.4) blur(8px);
+}
+
+.ab-nav .ab-container {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  height: var(--ab-nav-h);
+}
+
+.ab-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ab-ink) !important;
+  font-weight: 700;
+  font-size: 1.08rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.ab-brand img {
+  width: 34px;
+  height: 34px;
+}
+
+.ab-nav-links {
+  display: flex;
+  gap: 22px;
+  margin-left: auto;
+}
+
+.ab-nav-links a {
+  color: var(--ab-muted);
+  font-weight: 500;
+  font-size: 0.95rem;
+  text-decoration: none;
+}
+
+.ab-nav-links a:hover {
+  color: var(--ab-cherry);
+}
+
+.ab-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 22px;
+  border-radius: 999px;
+  border: 1.5px solid transparent;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.97rem;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.ab-btn-primary {
+  background: var(--ab-cherry);
+  color: #fff !important;
+}
+
+.ab-btn-primary:hover {
+  background: var(--ab-cherry-dark);
+}
+
+.ab-btn-ghost {
+  background: #fff;
+  border-color: var(--ab-line);
+  color: var(--ab-ink) !important;
+}
+
+.ab-btn-ghost:hover {
+  border-color: var(--ab-cherry);
+  color: var(--ab-cherry) !important;
+}
+
+.ab-btn-sm {
+  min-height: 38px;
+  padding: 0 16px;
+  font-size: 0.9rem;
+}
+
+/* ── Hero ── */
+.ab-hero {
+  padding: clamp(40px, 7vw, 84px) 0 0;
+  background:
+    radial-gradient(900px 380px at 15% 0%, rgb(225 29 72 / 8%), transparent 70%),
+    radial-gradient(900px 380px at 85% 10%, rgb(37 99 235 / 9%), transparent 70%),
+    var(--ab-bg);
+  text-align: center;
+}
+
+.ab-eyebrow {
+  display: inline-block;
+  margin: 0 0 14px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--ab-cherry-soft);
+  color: var(--ab-cherry-dark);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.ab-hero h1 {
+  max-width: 880px;
+  margin: 0 auto;
+  color: var(--ab-ink);
+  font-size: clamp(2rem, 4.6vw, 3.25rem);
+  line-height: 1.18;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.ab-hero h1 em {
+  font-style: normal;
+  color: var(--ab-cherry);
+}
+
+.ab-hero-lead {
+  max-width: 720px;
+  margin: 18px auto 0;
+  color: var(--ab-muted);
+  font-size: clamp(1rem, 1.6vw, 1.12rem);
+}
+
+.ab-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+/* Trang chủ (08/11): chữ bên trái, thẻ đăng nhập của auth.css bên phải. */
+.ab-hero--home {
+  text-align: left;
+  padding-top: clamp(28px, 5vw, 64px);
+}
+
+.ab-hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 440px);
+  gap: clamp(28px, 5vw, 64px);
+  align-items: center;
+}
+
+.ab-hero--home h1 {
+  max-width: 620px;
+  margin: 0;
+  font-size: clamp(2rem, 3.8vw, 3.05rem);
+}
+
+.ab-hero--home .ab-hero-lead {
+  max-width: 580px;
+  margin: 18px 0 0;
+}
+
+.ab-hero--home .ab-cta-row {
+  justify-content: flex-start;
+}
+
+.ab-login {
+  min-width: 0;
+}
+
+.ab-login .auth-card {
+  width: 100%;
+  max-width: 440px;
+  margin-left: auto;
+  box-shadow: 0 24px 60px -28px rgb(15 23 42 / 35%);
+}
+
+.ab-login .auth-tab {
+  white-space: nowrap;
+}
+
+.ab-shot {
+  margin: clamp(36px, 5vw, 56px) auto 0;
+  max-width: 1080px;
+  border-radius: 14px 14px 0 0;
+  border: 1px solid var(--ab-line);
+  border-bottom: 0;
+  background: #fff;
+  box-shadow: 0 30px 70px -30px rgb(15 23 42 / 35%);
+  overflow: hidden;
+}
+
+.ab-shot-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  background: var(--ab-soft);
+  border-bottom: 1px solid var(--ab-line);
+}
+
+.ab-shot-bar span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #cbd5e1;
+}
+
+.ab-shot-bar small {
+  margin-left: 10px;
+  color: var(--ab-subtle);
+  font-size: 0.78rem;
+}
+
+/* ── Dải số liệu ── */
+.ab-stats {
+  background: var(--ab-ink);
+  color: #fff;
+  padding: clamp(28px, 4vw, 40px) 0;
+}
+
+.ab-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+  margin: 0;
+}
+
+.ab-stat {
+  margin: 0;
+  text-align: center;
+}
+
+.ab-stat dt {
+  order: 2;
+  color: #cbd5e1;
+  font-size: 0.92rem;
+}
+
+.ab-stat dd {
+  margin: 0 0 4px;
+  font-size: clamp(1.7rem, 3.4vw, 2.3rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+
+.ab-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.ab-stats-note {
+  margin: 18px 0 0;
+  color: #94a3b8;
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+/* ── Khối nội dung chung ── */
+.ab-section {
+  padding: clamp(56px, 8vw, 96px) 0;
+}
+
+.ab-section--soft {
+  background: var(--ab-soft);
+  border-top: 1px solid var(--ab-line);
+  border-bottom: 1px solid var(--ab-line);
+}
+
+.ab-head {
+  max-width: 720px;
+  margin: 0 auto clamp(32px, 4vw, 48px);
+  text-align: center;
+}
+
+.ab-kicker {
+  margin: 0 0 8px;
+  color: var(--ab-cherry);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ab-head h2,
+.ab-h2 {
+  margin: 0;
+  color: var(--ab-ink);
+  font-size: clamp(1.6rem, 3.2vw, 2.25rem);
+  line-height: 1.25;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.ab-head p {
+  margin: 14px 0 0;
+  color: var(--ab-muted);
+}
+
+/* ── Thẻ tính năng ── */
+.ab-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.ab-card {
+  padding: 26px 24px;
+  border: 1px solid var(--ab-line);
+  border-radius: var(--ab-radius);
+  background: #fff;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.ab-card:hover {
+  border-color: #fecdd3;
+  box-shadow: 0 18px 40px -24px rgb(225 29 72 / 35%);
+  transform: translateY(-2px);
+}
+
+.ab-card-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  background: var(--ab-cherry-soft);
+  color: var(--ab-cherry);
+}
+
+.ab-card:nth-child(even) .ab-card-icon {
+  background: var(--ab-blue-soft);
+  color: var(--ab-blue);
+}
+
+.ab-card h3 {
+  margin: 0 0 8px;
+  color: var(--ab-ink);
+  font-size: 1.1rem;
+  line-height: 1.35;
+}
+
+.ab-card p {
+  margin: 0;
+  color: var(--ab-muted);
+  font-size: 0.95rem;
+}
+
+/* ── Ảnh phần mềm theo tab ── */
+.ab-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 0 24px;
+}
+
+.ab-tab {
+  min-height: 40px;
+  padding: 0 18px;
+  border: 1.5px solid var(--ab-line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ab-muted);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+
+.ab-tab[aria-selected="true"] {
+  background: var(--ab-ink);
+  border-color: var(--ab-ink);
+  color: #fff;
+}
+
+.ab-tabs[hidden] {
+  display: none;
+}
+
+.ab-gallery {
+  display: grid;
+  gap: 28px;
+}
+
+.ab-figure {
+  margin: 0;
+}
+
+.ab-js .ab-figure[data-active="false"] {
+  display: none;
+}
+
+.ab-figure .ab-shot {
+  margin: 0 auto;
+  border-radius: 14px;
+  border-bottom: 1px solid var(--ab-line);
+  box-shadow: 0 24px 60px -32px rgb(15 23 42 / 40%);
+}
+
+.ab-figure figcaption {
+  max-width: 760px;
+  margin: 16px auto 0;
+  color: var(--ab-muted);
+  font-size: 0.95rem;
+  text-align: center;
+}
+
+.ab-figure figcaption strong {
+  color: var(--ab-ink);
+}
+
+.ab-gallery-note {
+  margin: 20px 0 0;
+  color: var(--ab-subtle);
+  font-size: 0.84rem;
+  text-align: center;
+}
+
+/* ── Các bước ── */
+.ab-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: ab-step;
+}
+
+.ab-steps li {
+  position: relative;
+  padding: 24px 22px;
+  border-radius: var(--ab-radius);
+  background: #fff;
+  border: 1px solid var(--ab-line);
+  counter-increment: ab-step;
+}
+
+.ab-steps li::before {
+  content: counter(ab-step);
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-bottom: 14px;
+  border-radius: 50%;
+  background: var(--ab-cherry);
+  color: #fff;
+  font-weight: 700;
+}
+
+.ab-steps h3 {
+  margin: 0 0 6px;
+  color: var(--ab-ink);
+  font-size: 1.05rem;
+}
+
+.ab-steps p {
+  margin: 0;
+  color: var(--ab-muted);
+  font-size: 0.94rem;
+}
+
+/* ── Về Cherry ── */
+.ab-about {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: clamp(28px, 5vw, 64px);
+  align-items: start;
+}
+
+.ab-about-copy p {
+  margin: 14px 0 0;
+  color: var(--ab-muted);
+}
+
+.ab-about-copy h3 {
+  margin: 28px 0 0;
+  color: var(--ab-ink);
+  font-size: 1.1rem;
+}
+
+.ab-facts {
+  margin: 0;
+  padding: 8px 24px;
+  border: 1px solid var(--ab-line);
+  border-radius: var(--ab-radius);
+  background: #fff;
+}
+
+.ab-facts div {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--ab-line);
+}
+
+.ab-facts div:last-child {
+  border-bottom: 0;
+}
+
+.ab-facts dt {
+  color: var(--ab-subtle);
+  font-size: 0.9rem;
+}
+
+.ab-facts dd {
+  margin: 0;
+  color: var(--ab-ink);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.ab-en {
+  margin-top: clamp(40px, 6vw, 64px);
+  padding: 24px 26px;
+  border-radius: var(--ab-radius);
+  background: var(--ab-soft);
+  border: 1px solid var(--ab-line);
+}
+
+.ab-en h3 {
+  margin: 0 0 8px;
+  color: var(--ab-ink);
+  font-size: 1.05rem;
+}
+
+.ab-en p {
+  margin: 10px 0 0;
+  color: var(--ab-muted);
+  font-size: 0.95rem;
+}
+
+/* ── Lời mời liên hệ ── */
+.ab-cta {
+  padding: clamp(48px, 7vw, 80px) 0;
+  background: linear-gradient(135deg, var(--ab-cherry) 0%, #9f1239 100%);
+  color: #fff;
+  text-align: center;
+}
+
+.ab-cta h2 {
+  margin: 0;
+  font-size: clamp(1.55rem, 3.2vw, 2.2rem);
+  line-height: 1.25;
+  font-weight: 800;
+  text-wrap: balance;
+}
+
+.ab-cta p {
+  max-width: 640px;
+  margin: 14px auto 0;
+  color: #ffe4e6;
+}
+
+.ab-cta .ab-btn-primary {
+  background: #fff;
+  color: var(--ab-cherry-dark) !important;
+}
+
+.ab-cta .ab-btn-primary:hover {
+  background: #ffe4e6;
+}
+
+.ab-cta .ab-btn-ghost {
+  background: transparent;
+  border-color: rgb(255 255 255 / 55%);
+  color: #fff !important;
+}
+
+.ab-cta .ab-btn-ghost:hover {
+  border-color: #fff;
+  color: #fff !important;
+  background: rgb(255 255 255 / 10%);
+}
+
+/* ── Chân trang ── */
+.ab-footer {
+  background: var(--ab-ink);
+  color: #cbd5e1;
+  padding: clamp(40px, 6vw, 64px) 0 0;
+  font-size: 0.93rem;
+}
+
+.ab-footer-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 32px;
+}
+
+.ab-footer .ab-brand {
+  color: #fff !important;
+}
+
+.ab-footer h2 {
+  margin: 0 0 14px;
+  color: #fff;
+  font-size: 1rem;
+}
+
+.ab-footer p {
+  margin: 12px 0 0;
+}
+
+.ab-footer ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ab-footer li + li {
+  margin-top: 8px;
+}
+
+.ab-footer a {
+  color: #e2e8f0;
+  text-decoration: none;
+}
+
+.ab-footer a:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+
+.ab-footer-bottom {
+  margin-top: 40px;
+  padding: 18px 0;
+  border-top: 1px solid rgb(255 255 255 / 10%);
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+/* ── Màn nhỏ ── */
+@media (max-width: 1000px) {
+  .ab-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ab-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ab-about {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ab-hero-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ab-hero--home .ab-hero-copy {
+    text-align: center;
+  }
+
+  .ab-hero--home h1,
+  .ab-hero--home .ab-hero-lead {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .ab-hero--home .ab-cta-row {
+    justify-content: center;
+  }
+
+  .ab-login .auth-card {
+    margin: 0 auto;
+    max-width: 480px;
+  }
+}
+
+@media (max-width: 860px) {
+  .ab-nav-links {
+    display: none;
+  }
+
+  .ab-nav .ab-btn {
+    margin-left: auto;
+  }
+
+  .ab-topbar-note {
+    display: none;
+  }
+
+  .ab-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 28px;
+  }
+
+  .ab-footer-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .ab-cards,
+  .ab-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ab-cta-row .ab-btn {
+    width: 100%;
+  }
+
+  .ab-shot-bar small {
+    display: none;
+  }
+
+  .ab-facts {
+    padding: 4px 18px;
+  }
+
+  .ab-login .auth-tab {
+    padding-left: 8px;
+    padding-right: 8px;
+    font-size: 0.95rem;
+  }
+
+  .ab-facts div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}
+
+@media (max-width: 380px) {
+  .ab-nav .ab-container {
+    gap: 10px;
+  }
+
+  .ab-brand {
+    gap: 8px;
+    font-size: 0.95rem;
+  }
+
+  .ab-brand img {
+    width: 28px;
+    height: 28px;
+  }
+
+  .ab-nav .ab-btn-sm {
+    padding: 0 12px;
+    font-size: 0.85rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .ab-card,
+  .ab-btn {
+    transition: none;
+  }
+
+  .ab-card:hover {
+    transform: none;
+  }
+}

@@ -65,6 +65,12 @@ scratch/
 scratchpad/
 # Output tu sinh cua tools/cloud-run/deploy-all.py (url + digest), loi thoi sau moi lan deploy
 cloud_run_profile_moi_nhat.txt
+# 26/10/2026 - 87 file scratch_* (scratch_dtv4_*.json = kho TKB that THCS Nguyen Hue)
+# va ket qua e2e/profile Cloud Run tung nam o goc repo ma khong bi chan. Da doi vao
+# scratch/_goc-du-an-2026-10-26/. Script/dump mot lan de trong scratch/<viec>/.
+/scratch_*
+/cloud_e2e_result*.json
+/cloud_run_profiles*.json
 TEMP/
 temp/
 *.xlsx

@@ -7961,12 +7961,14 @@ def build_payload(
     optimization_skipped_reason: str | None = None,
     allow_temporary_teacher_gap_debt: bool = False,
     shared_teacher_slots: Iterable[tuple[str, int, str, int]] | None = None,
+    fixed_lessons: Iterable[Lesson] | None = None,
 ) -> dict[str, Any]:
     metrics = compute_metrics(
         ctx.school_data,
         lessons,
         rules=rules or ctx.rules,
         shared_teacher_slots=shared_teacher_slots,
+        fixed_lessons=fixed_lessons,
     )
     report_ctx = original_ctx or ctx
     unassigned_lessons = unassigned_lessons or []

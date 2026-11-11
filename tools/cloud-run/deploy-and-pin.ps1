@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$ProjectId = 'project-61ee7855-507e-40a3-879',
-    [string]$InvokerServiceAccount = 'tkb-cloud-run-invoker@project-61ee7855-507e-40a3-879.iam.gserviceaccount.com',
+    [string]$ProjectId = 'project-8ce8bf36-3ba7-430f-8f7',
+    [string]$InvokerServiceAccount = 'cherry-invoker@project-8ce8bf36-3ba7-430f-8f7.iam.gserviceaccount.com',
     [switch]$ConfirmDeployment
 )
 
@@ -90,17 +90,25 @@ Step '3/4 VPS: ghim digest (2 drop-in systemd + moi profile kvstore)'
 & $python (Join-Path $repoRoot 'tools\vps-deploy\pin-cloud-run-digest.py') $digest --apply |
     Select-Object -Last 3
 
-Step '4/4 Xac minh: /health cua ca 3 vung phai tra dung digest vua ghim'
-$urls = [ordered]@{
-    'asia-southeast2' = 'https://tkb-solver-tys7xrhbca-et.a.run.app'
-    'asia-southeast1' = 'https://tkb-solver-tys7xrhbca-as.a.run.app'
-    'asia-east1'      = 'https://tkb-solver-tys7xrhbca-de.a.run.app'
-}
-$bad = 0
+Step '4/4 Xac minh: /health cua moi vung phai tra dung digest vua ghim'
 # gcloud in WARNING mao danh ra stderr -> NativeCommandError -> chet oan neu
 # ErrorActionPreference van la 'Stop' (bay thu HAI cua PowerShell 5.1).
 $prevEap2 = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
+# 30/10: doc URL tung vung tu chinh project (truoc day ghi cung URL project cu,
+# doi project la kiem nham service khac).
+$urls = [ordered]@{}
+$servicesJson = (& gcloud run services list --project=$ProjectId --format=json --quiet 2>$null) -join "`n"
+foreach ($svc in @($servicesJson | ConvertFrom-Json)) {
+    if ($svc.metadata.name -eq 'cherry-solver') {
+        $urls[[string]$svc.metadata.labels.'cloud.googleapis.com/location'] = [string]$svc.status.url
+    }
+}
+$bad = 0
+if ($urls.Count -eq 0) {
+    $bad++
+    Write-Warning "Khong tim thay service cherry-solver nao trong $ProjectId."
+}
 foreach ($region in $urls.Keys) {
     $u = $urls[$region]
     $tok = & gcloud auth print-identity-token --impersonate-service-account=$InvokerServiceAccount --audiences=$u --quiet 2>$null
@@ -127,5 +135,5 @@ if ($bad -gt 0) {
     Write-Warning "$bad vung chua khop digest - nguoi dung se gap 'khong nhan luot giai'. Xem $log"
     exit 1
 }
-Write-Host 'XONG: ca 3 vung deu phuc vu dung digest da ghim.' -ForegroundColor Green
+Write-Host "XONG: $($urls.Count) vung deu phuc vu dung digest da ghim." -ForegroundColor Green
 Write-Host "Nhat ky: $log"

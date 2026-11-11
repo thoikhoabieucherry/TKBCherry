@@ -3,9 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cherry Scheduler — Đăng nhập</title>
-  <link rel="icon" type="image/png" href="assets/favicon-cherry.png?v=2" />
+  <title>Cherry Scheduler — Xếp thời khóa biểu tự động</title>
+  <meta name="description" content="Cherry Scheduler là phần mềm xếp thời khóa biểu tự động trên web, đã dùng để xếp thời khóa biểu cho hơn 50 trường tiểu học, THCS và trung tâm GDNN-GDTX: nhập phân công, đặt 27 loại yêu cầu của giáo viên và môn học, bấm xếp, chỉnh bằng kéo-thả và xuất Excel." />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://tkbcherry.com/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Cherry Scheduler" />
+  <meta property="og:title" content="Cherry Scheduler — Xếp thời khóa biểu tự động" />
+  <meta property="og:description" content="Phần mềm xếp thời khóa biểu tự động cho trường tiểu học, THCS và trung tâm GDNN-GDTX." />
+  <meta property="og:url" content="https://tkbcherry.com/" />
+  <meta property="og:image" content="https://tkbcherry.com/assets/about/tkb-planner.jpg" />
+  <meta property="og:locale" content="vi_VN" />
+  <link rel="icon" type="image/png" href="/assets/favicon-cherry.png?v=2" />
   <meta name="theme-color" content="#ffffff" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&amp;display=swap" />
   <link rel="stylesheet" href="tokens.css?v=20260710-light-v1" />
   <link rel="stylesheet" href="auth.css?v=20260820-portal-info-v1" />
   <link rel="stylesheet" href="theme-light.css?v=20260710-premium-ui-v2" />
@@ -16,177 +29,420 @@
   <script src="shared/runtime.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
   <script defer src="shared/password-toggle.js?v=20260708-v1"></script>
   <script defer src="auth.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
+  <link rel="stylesheet" href="/about/about.css?v=20261108-home-v1" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "name": "Cherry Scheduler",
+    "url": "https://tkbcherry.com/",
+    "inLanguage": "vi",
+    "mainEntity": {
+      "@type": "Organization",
+      "@id": "https://tkbcherry.com/#organization",
+      "name": "Cherry Software",
+      "alternateName": "Cherry Scheduler",
+      "url": "https://tkbcherry.com/",
+      "logo": "https://tkbcherry.com/assets/cherry-scheduler-logo.png",
+      "email": "contact@tkbcherry.com",
+      "telephone": "+84352261815",
+      "founder": {
+        "@type": "Person",
+        "name": "Nguyen Hoang An",
+        "alternateName": "Nguyễn Hoàng Ân",
+        "jobTitle": "Founder",
+        "email": "an@tkbcherry.com",
+        "sameAs": "https://www.linkedin.com/in/an-nguyen-1b4133442/"
+      },
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "424 đường Nhuận Đức",
+        "addressLocality": "Xã Nhuận Đức, TP. Hồ Chí Minh",
+        "addressCountry": "VN"
+      }
+    }
+  }
+  </script>
 </head>
-<body class="auth-body auth-home">
-  <main class="auth-shell" id="authApp">
-    <div class="auth-bg" aria-hidden="true">
-      <div class="auth-orb auth-orb-a"></div>
-      <div class="auth-orb auth-orb-b"></div>
-      <div class="auth-grid"></div>
-    </div>
+<body class="ab-page">
+  <a class="ab-skip" href="#noi-dung">Bỏ qua menu</a>
 
-    <section class="auth-panel auth-panel-brand">
-      <div class="auth-brand-inner">
-        <div class="auth-brand-copy">
-          <img class="auth-logo-img" src="assets/cherry-scheduler-logo.png?v=2" width="128" height="128" alt="Cherry Scheduler" />
-          <h1>Cherry Scheduler</h1>
-          <p class="auth-brand-tagline">Xếp nhanh, chuẩn xác – Nhàn hơn mỗi ngày.</p>
+  <div class="ab-topbar">
+    <div class="ab-container">
+      <div class="ab-topbar-contact">
+        <span>Điện thoại / Zalo: <a href="tel:+84352261815">0352 261 815</a></span>
+        <a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a>
+      </div>
+      <span class="ab-topbar-note">Hỗ trợ nhập dữ liệu cho trường mới</span>
+    </div>
+  </div>
+
+  <header class="ab-nav">
+    <div class="ab-container">
+      <a class="ab-brand" href="#noi-dung">
+        <img src="/assets/cherry-scheduler-logo.png?v=2" width="34" height="34" alt="" />
+        <span>Cherry Scheduler</span>
+      </a>
+      <nav class="ab-nav-links" aria-label="Mục trên trang">
+        <a href="#tinh-nang">Tính năng</a>
+        <a href="#phan-mem">Phần mềm</a>
+        <a href="#bat-dau">Cách bắt đầu</a>
+        <a href="#ve-chung-toi">Về chúng tôi</a>
+        <a href="#lien-he">Liên hệ</a>
+      </nav>
+      <a class="ab-btn ab-btn-primary ab-btn-sm" href="#authCard" data-auth-tab="login">Đăng nhập</a>
+    </div>
+  </header>
+
+  <main id="noi-dung">
+    <section class="ab-hero ab-hero--home">
+      <div class="ab-container ab-hero-grid">
+        <div class="ab-hero-copy">
+          <p class="ab-eyebrow">Phần mềm xếp thời khóa biểu trên web</p>
+          <h1>Thời khóa biểu cho cả trường, <em>đúng yêu cầu</em> của từng thầy cô</h1>
+          <p class="ab-hero-lead">Cherry Scheduler xếp thời khóa biểu tự động cho trường tiểu học, THCS và trung tâm GDNN-GDTX. Nhập phân công, chọn yêu cầu của giáo viên và môn học, bấm xếp; sau đó chỉnh tay bằng kéo-thả và xuất ra Excel.</p>
+          <div class="ab-cta-row">
+            <a class="ab-btn ab-btn-primary" href="#authCard" data-auth-tab="register">Đăng ký trường</a>
+            <a class="ab-btn ab-btn-ghost" href="https://zalo.me/0352261815" target="_blank" rel="noopener">Nhắn Zalo tư vấn</a>
+          </div>
         </div>
-        <figure class="auth-brand-visual" aria-label="Minh họa thời khóa biểu Cherry Scheduler">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 340" fill="none" aria-hidden="true">
-            <defs>
-              <linearGradient id="tkbHeroCardBg" x1="40" y1="20" x2="480" y2="320" gradientUnits="userSpaceOnUse">
-                <stop offset="0" stop-color="#1e3a8a" stop-opacity="0.55"/>
-                <stop offset="1" stop-color="#581c87" stop-opacity="0.35"/>
-              </linearGradient>
-              <linearGradient id="tkbHeroAccent" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stop-color="#2563eb"/>
-                <stop offset="1" stop-color="#7c3aed"/>
-              </linearGradient>
-              <linearGradient id="tkbHeroShine" x1="80" y1="0" x2="420" y2="300" gradientUnits="userSpaceOnUse">
-                <stop offset="0" stop-color="#ffffff" stop-opacity="0.14"/>
-                <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
-              </linearGradient>
-              <filter id="tkbHeroGlow" x="-30%" y="-30%" width="160%" height="160%">
-                <feGaussianBlur stdDeviation="18" result="blur"/>
-                <feMerge>
-                  <feMergeNode in="blur"/>
-                  <feMergeNode in="SourceGraphic"/>
-                </feMerge>
-              </filter>
-            </defs>
-            <ellipse cx="260" cy="300" rx="190" ry="24" fill="#0f172a" opacity="0.55"/>
-            <g filter="url(#tkbHeroGlow)">
-              <rect x="72" y="42" width="376" height="252" rx="28" fill="url(#tkbHeroCardBg)" stroke="rgba(255,255,255,0.12)" stroke-width="1.5"/>
-              <rect x="72" y="42" width="376" height="252" rx="28" fill="url(#tkbHeroShine)"/>
-            </g>
-            <rect x="98" y="68" width="324" height="200" rx="18" fill="rgba(15,23,42,0.72)" stroke="rgba(255,255,255,0.08)"/>
-            <rect x="118" y="88" width="72" height="28" rx="8" fill="url(#tkbHeroAccent)" opacity="0.95"/>
-            <text x="154" y="107" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="13" font-weight="700">TKB Pro</text>
-            <g stroke="rgba(148,163,184,0.22)" stroke-width="1.2">
-              <line x1="118" y1="132" x2="402" y2="132"/>
-              <line x1="118" y1="162" x2="402" y2="162"/>
-              <line x1="118" y1="192" x2="402" y2="192"/>
-              <line x1="118" y1="222" x2="402" y2="222"/>
-              <line x1="178" y1="124" x2="178" y2="248"/>
-              <line x1="238" y1="124" x2="238" y2="248"/>
-              <line x1="298" y1="124" x2="298" y2="248"/>
-              <line x1="358" y1="124" x2="358" y2="248"/>
-            </g>
-            <rect x="124" y="138" width="46" height="18" rx="5" fill="#2563eb" opacity="0.9"/>
-            <rect x="184" y="138" width="46" height="18" rx="5" fill="#22d3ee" opacity="0.85"/>
-            <rect x="244" y="138" width="46" height="18" rx="5" fill="#a78bfa" opacity="0.9"/>
-            <rect x="304" y="138" width="46" height="18" rx="5" fill="#34d399" opacity="0.88"/>
-            <rect x="124" y="168" width="46" height="18" rx="5" fill="#f59e0b" opacity="0.88"/>
-            <rect x="184" y="168" width="46" height="18" rx="5" fill="#2563eb" opacity="0.75"/>
-            <rect x="304" y="168" width="46" height="18" rx="5" fill="#22d3ee" opacity="0.8"/>
-            <rect x="184" y="198" width="46" height="18" rx="5" fill="#34d399" opacity="0.85"/>
-            <rect x="244" y="198" width="46" height="18" rx="5" fill="#f59e0b" opacity="0.85"/>
-            <rect x="364" y="198" width="30" height="18" rx="5" fill="#a78bfa" opacity="0.8"/>
-            <rect x="124" y="228" width="46" height="14" rx="4" fill="#64748b" opacity="0.45"/>
-            <rect x="244" y="228" width="46" height="14" rx="4" fill="#64748b" opacity="0.45"/>
-            <circle cx="404" cy="92" r="22" fill="rgba(34,211,238,0.16)" stroke="rgba(34,211,238,0.45)" stroke-width="1.5"/>
-            <path d="M396 92l6 6 12-14" stroke="#22d3ee" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-            <g opacity="0.9">
-              <rect x="88" y="24" width="54" height="54" rx="16" fill="url(#tkbHeroAccent)"/>
-              <path d="M104 18v12M126 18v12" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/>
-              <rect x="98" y="34" width="34" height="28" rx="6" fill="rgba(255,255,255,0.95)"/>
-              <path d="M98 44h34M110 34v28M120 34v28" stroke="#dbeafe" stroke-width="1.5"/>
-              <rect x="101" y="48" width="6" height="6" rx="1.5" fill="#2563eb"/>
-              <rect x="113" y="48" width="6" height="6" rx="1.5" fill="#f59e0b"/>
-              <rect x="125" y="48" width="6" height="6" rx="1.5" fill="#14b8a6"/>
-            </g>
-          </svg>
-        </figure>
+        <div class="auth-home ab-login">
+        <div class="auth-card" id="authCard">
+          <div class="auth-tabs" role="tablist">
+            <button type="button" class="auth-tab is-active" data-tab="login" role="tab" aria-selected="true">Đăng nhập</button>
+            <button type="button" class="auth-tab" data-tab="register" role="tab" aria-selected="false">Đăng ký trường</button>
+          </div>
+
+          <div class="auth-pane is-active" data-pane="login">
+            <h2>Đăng nhập</h2>
+            <form id="loginForm" class="auth-form" novalidate>
+              <label>Tên đăng nhập
+                <input type="text" name="loginId" autocomplete="username" placeholder="Nhập tên đăng nhập" required />
+              </label>
+              <label>Mật khẩu
+                <input type="password" name="password" autocomplete="current-password" placeholder="Nhập mật khẩu" required />
+              </label>
+              <div class="auth-login-options">
+                <label class="auth-remember">
+                  <input type="checkbox" name="remember" id="rememberMe" />
+                  <span>Ghi nhớ đăng nhập</span>
+                </label>
+                <button type="button" class="auth-link-btn" id="btnForgotPassword">Quên mật khẩu?</button>
+              </div>
+              <button type="submit" class="auth-submit">Đăng nhập</button>
+            </form>
+          </div>
+
+          <div class="auth-pane" data-pane="forgot" hidden>
+            <h2>Quên mật khẩu</h2>
+            <p class="auth-sub">Nhập tên đăng nhập hoặc email đã đăng ký. Hệ thống gửi mã xác thực, sau đó gửi mật khẩu mới về email.</p>
+            <form id="forgotForm" class="auth-form" novalidate>
+              <label>Tài khoản hoặc email
+                <input type="text" name="loginOrEmail" autocomplete="username" placeholder="Nhập tài khoản hoặc email" required />
+              </label>
+              <button type="button" class="auth-btn-secondary" id="btnSendResetOtp">Gửi mã xác thực</button>
+              <div class="auth-otp-demo" id="resetOtpDemo" hidden>
+                <span>Mã xác thực: <strong id="resetOtpCode"></strong></span>
+              </div>
+              <label>Mã 6 số
+                <input type="text" name="code" inputmode="numeric" maxlength="6" placeholder="Nhập mã 6 số" />
+              </label>
+              <div class="auth-otp-demo is-success" id="resetPwdDemo" hidden>
+                <span>Mật khẩu mới: <strong id="resetNewPassword"></strong></span>
+              </div>
+              <button type="submit" class="auth-submit">Xác nhận &amp; nhận mật khẩu mới</button>
+              <button type="button" class="auth-link-btn" id="btnBackLogin">Quay lại đăng nhập</button>
+            </form>
+          </div>
+
+          <div class="auth-pane" data-pane="register" hidden>
+            <h2>Đăng ký trường</h2>
+            <form id="registerForm" class="auth-form auth-form-register" novalidate>
+              <div class="auth-form-row">
+                <label>Tên đăng nhập
+                  <input type="text" name="loginId" autocomplete="username" placeholder="Nhập tên đăng nhập" required minlength="3" />
+                </label>
+                <label>Mật khẩu
+                  <input type="password" name="password" autocomplete="new-password" placeholder="Nhập mật khẩu" required />
+                </label>
+              </div>
+              <div class="auth-form-row">
+                <label>Email
+                  <input type="email" name="email" autocomplete="email" placeholder="Nhập email" required />
+                </label>
+                <label>Số điện thoại
+                  <input type="tel" name="phone" autocomplete="tel" placeholder="Nhập số điện thoại" required />
+                </label>
+              </div>
+              <label>Tên trường
+                <input type="text" name="schoolName" placeholder="Nhập tên trường" required />
+              </label>
+              <button type="submit" class="auth-submit">Đăng ký trường</button>
+            </form>
+          </div>
+
+          <div class="auth-alert" id="authAlert" role="alert" hidden></div>
+        </div>
+        </div>
+      </div>
+      <div class="ab-container">
+        <div class="ab-shot">
+          <div class="ab-shot-bar" aria-hidden="true"><span></span><span></span><span></span><small>tkbcherry.com · Sắp xếp TKB</small></div>
+          <img src="/assets/about/tkb-planner.jpg" width="1600" height="721" alt="Màn Sắp xếp của Cherry Scheduler: thời khóa biểu lớp 6/1 và bảng Thống kê báo 627 tiết đã xếp, 0 tiết chưa xếp" fetchpriority="high" />
+        </div>
       </div>
     </section>
 
-    <section class="auth-panel auth-panel-form">
-      <div class="auth-card" id="authCard">
-        <div class="auth-tabs" role="tablist">
-          <button type="button" class="auth-tab is-active" data-tab="login" role="tab" aria-selected="true">Đăng nhập</button>
-          <button type="button" class="auth-tab" data-tab="register" role="tab" aria-selected="false">Đăng ký trường</button>
+    <section class="ab-stats" aria-label="Số liệu">
+      <div class="ab-container">
+        <dl class="ab-stats-grid">
+          <div class="ab-stat"><dt>trường đã xếp thời khóa biểu</dt><dd>Hơn 50</dd></div>
+          <div class="ab-stat"><dt>lớp học có thời khóa biểu</dt><dd>~2.000</dd></div>
+          <div class="ab-stat"><dt>tiết mỗi tuần đã được xếp</dt><dd>Hơn 55.000</dd></div>
+          <div class="ab-stat"><dt>loại yêu cầu xếp lịch</dt><dd>27</dd></div>
+        </dl>
+        <p class="ab-stats-note">Đếm từ dữ liệu trên máy chủ Cherry Scheduler, tháng 11/2026; không tính tài khoản thử và trường mới nhập dữ liệu.</p>
+      </div>
+    </section>
+
+    <section class="ab-section" id="tinh-nang">
+      <div class="ab-container">
+        <div class="ab-head">
+          <p class="ab-kicker">Tính năng</p>
+          <h2>Từ file Excel của trường đến thời khóa biểu in ra</h2>
+          <p>Mọi bước nằm trong một phần mềm trên trình duyệt, không cần cài đặt.</p>
+        </div>
+        <div class="ab-cards">
+          <article class="ab-card">
+            <div class="ab-card-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></svg>
+            </div>
+            <h3>Nhập dữ liệu từ Excel</h3>
+            <p>Khối, lớp, giáo viên, môn học, tiết chuẩn và phân công nhập từ file của trường. Chưa quen, gửi file cho chúng tôi nhập giúp.</p>
+          </article>
+          <article class="ab-card">
+            <div class="ab-card-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg>
+            </div>
+            <h3>27 loại yêu cầu</h3>
+            <p>Giới hạn ngày và buổi dạy, tiết học xếp liền, môn không học cùng buổi, giáo viên dạy hai ca hoặc nhiều cơ sở, ô cố định như Chào cờ.</p>
+          </article>
+          <article class="ab-card">
+            <div class="ab-card-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>
+            </div>
+            <h3>Xếp tự động bằng Cherry</h3>
+            <p>Bộ giải ràng buộc OR-Tools CP-SAT xếp cả trường, mỗi lượt 1–3 phút, ưu tiên xếp đủ tiết và giữ đúng yêu cầu bắt buộc. Trường lớn nhất đã xếp có 75 lớp, khoảng 2.200 tiết mỗi tuần.</p>
+          </article>
+          <article class="ab-card">
+            <div class="ab-card-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 6-6"/></svg>
+            </div>
+            <h3>Gọn buổi, ít tiết trống</h3>
+            <p>Nút Tối ưu giảm số buổi giáo viên chỉ dạy 1 tiết và các tiết trống giữa buổi, mà không làm hỏng yêu cầu đã đạt.</p>
+          </article>
+          <article class="ab-card">
+            <div class="ab-card-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3"/><path d="M2 12h20M12 2v20"/></svg>
+            </div>
+            <h3>Chỉnh tay bằng kéo-thả</h3>
+            <p>Kéo một tiết sang ô khác, hoặc thả đè để đổi chỗ hai tiết. Bảng Thống kê cập nhật ngay số tiết chưa xếp, buổi 1 tiết, tiết trống.</p>
+          </article>
+          <article class="ab-card">
+            <div class="ab-card-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
+            </div>
+            <h3>In và xuất file</h3>
+            <p>Thời khóa biểu từng lớp, từng giáo viên, từng phòng và TKB toàn trường ra Excel để in và gửi giáo viên; xuất file cho CSDL ngành.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="ab-section ab-section--soft" id="phan-mem">
+      <div class="ab-container">
+        <div class="ab-head">
+          <p class="ab-kicker">Phần mềm thực tế</p>
+          <h2>Ảnh chụp từ Cherry Scheduler</h2>
+        </div>
+        <div class="ab-tabs" role="tablist" aria-label="Chọn màn hình" hidden>
+          <button class="ab-tab" type="button" role="tab" id="tab-yeucau" aria-controls="shot-yeucau" aria-selected="true">Yêu cầu</button>
+          <button class="ab-tab" type="button" role="tab" id="tab-phancong" aria-controls="shot-phancong" aria-selected="false" tabindex="-1">Phân công</button>
+          <button class="ab-tab" type="button" role="tab" id="tab-in" aria-controls="shot-in" aria-selected="false" tabindex="-1">In TKB</button>
+        </div>
+        <div class="ab-gallery">
+          <figure class="ab-figure" id="shot-yeucau" role="tabpanel" aria-labelledby="tab-yeucau" data-active="true">
+            <div class="ab-shot">
+              <div class="ab-shot-bar" aria-hidden="true"><span></span><span></span><span></span><small>Yêu cầu của giáo viên</small></div>
+              <img src="/assets/about/tkb-rules.jpg" width="1200" height="833" loading="lazy" alt="Menu Yêu cầu của giáo viên: giới hạn ngày và buổi dạy, giáo viên dạy 2 ca, giáo viên dạy nhiều địa điểm, vị trí bắt buộc" />
+            </div>
+            <figcaption><strong>Yêu cầu.</strong> Yêu cầu của giáo viên (ngày và buổi dạy, dạy hai ca, dạy nhiều địa điểm), của môn học (tiết liền, học cách ngày, không cùng buổi) và các ô cố định.</figcaption>
+          </figure>
+          <figure class="ab-figure" id="shot-phancong" role="tabpanel" aria-labelledby="tab-phancong" data-active="false">
+            <div class="ab-shot">
+              <div class="ab-shot-bar" aria-hidden="true"><span></span><span></span><span></span><small>Phân công</small></div>
+              <img src="/assets/about/tkb-assignment.jpg" width="1600" height="829" loading="lazy" alt="Màn Phân công của lớp 6/1: bảng môn học, giáo viên, số tiết và giới hạn, khung Thêm nhanh bên phải" />
+            </div>
+            <figcaption><strong>Phân công.</strong> Mỗi lớp một bảng môn học, giáo viên, số tiết; khung Thêm nhanh để gán môn và giáo viên mà không phải gõ lại.</figcaption>
+          </figure>
+          <figure class="ab-figure" id="shot-in" role="tabpanel" aria-labelledby="tab-in" data-active="false">
+            <div class="ab-shot">
+              <div class="ab-shot-bar" aria-hidden="true"><span></span><span></span><span></span><small>In TKB</small></div>
+              <img src="/assets/about/tkb-print.jpg" width="1200" height="762" loading="lazy" alt="Menu In TKB: TKB lớp học, TKB giáo viên, TKB phòng, TKB toàn trường theo lớp học hoặc giáo viên, Xuất CSDL ngành" />
+            </div>
+            <figcaption><strong>In TKB.</strong> Thời khóa biểu từng lớp, từng giáo viên, từng phòng, TKB toàn trường theo lớp hoặc theo giáo viên, và file xuất cho CSDL ngành.</figcaption>
+          </figure>
+        </div>
+        <p class="ab-gallery-note">Ảnh chụp với dữ liệu mẫu 22 lớp; tên giáo viên trong ảnh là tên giả.</p>
+      </div>
+    </section>
+
+    <section class="ab-section" id="bat-dau">
+      <div class="ab-container">
+        <div class="ab-head">
+          <p class="ab-kicker">Cách bắt đầu</p>
+          <h2>Bốn bước để có thời khóa biểu</h2>
+        </div>
+        <ol class="ab-steps">
+          <li>
+            <h3>Đăng ký trường</h3>
+            <p>Tạo tài khoản trường trên tkbcherry.com bằng email và số điện thoại. Xác thực email để dùng đủ tính năng 30 ngày miễn phí.</p>
+          </li>
+          <li>
+            <h3>Nhập dữ liệu</h3>
+            <p>Nhập lớp, giáo viên và phân công từ Excel, hoặc gửi file qua Zalo, email để chúng tôi nhập giúp.</p>
+          </li>
+          <li>
+            <h3>Đặt yêu cầu</h3>
+            <p>Chọn yêu cầu của giáo viên, môn học và các ô cố định như Chào cờ, Sinh hoạt lớp.</p>
+          </li>
+          <li>
+            <h3>Xếp, chỉnh và in</h3>
+            <p>Bấm Cherry, xem bảng Thống kê, kéo-thả chỉnh những chỗ cần đổi rồi xuất Excel.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="ab-section ab-section--soft" id="ve-chung-toi">
+      <div class="ab-container">
+        <div class="ab-about">
+          <div class="ab-about-copy">
+            <p class="ab-kicker">Về chúng tôi</p>
+            <h2 class="ab-h2">Làm ra từ thời khóa biểu thật của các trường</h2>
+            <p>Cherry Scheduler do Nguyễn Hoàng Ân bắt đầu phát triển từ tháng 12/2025 tại TP. Hồ Chí Minh. Nhiều tính năng hiện có ra đời từ yêu cầu cụ thể của các trường đang dùng: giáo viên dạy ở hai cơ sở, tiết dạy ghép nhiều lớp, môn liên kết buổi chiều, phòng Tin học dùng chung.</p>
+            <h3>Cách chúng tôi làm phần mềm</h3>
+            <p>Máy chủ viết bằng Rust. Bộ giải dùng OR-Tools CP-SAT, chạy trên máy chủ hoặc ngay trên máy tính Windows của trường qua Cherry Agent.</p>
+            <p>Phần mềm do một người phát triển, dùng Claude Code, trợ lý lập trình AI của Anthropic, để viết mã, kiểm thử và chuẩn bị dữ liệu của từng trường từ file Excel. Bản thân phần mềm chưa dùng AI khi xếp thời khóa biểu.</p>
+          </div>
+          <dl class="ab-facts">
+            <div><dt>Sản phẩm</dt><dd>Cherry Scheduler</dd></div>
+            <div><dt>Nhóm</dt><dd>Cherry Software</dd></div>
+            <div><dt>Người sáng lập</dt><dd>Nguyễn Hoàng Ân · <a href="https://www.linkedin.com/in/an-nguyen-1b4133442/" target="_blank" rel="noopener">LinkedIn</a></dd></div>
+            <div><dt>Bắt đầu</dt><dd>Tháng 12/2025</dd></div>
+            <div><dt>Hình thức</dt><dd>Dự án độc lập của người sáng lập, tự đầu tư</dd></div>
+            <div><dt>Địa chỉ</dt><dd>424 đường Nhuận Đức, xã Nhuận Đức, TP. Hồ Chí Minh</dd></div>
+            <div><dt>Điện thoại / Zalo</dt><dd><a href="tel:+84352261815">0352 261 815</a></dd></div>
+            <div><dt>Email</dt><dd><a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a></dd></div>
+            <div><dt>Website</dt><dd><a href="https://tkbcherry.com">tkbcherry.com</a></dd></div>
+          </dl>
         </div>
 
-        <div class="auth-pane is-active" data-pane="login">
-          <h2>Đăng nhập</h2>
-          <form id="loginForm" class="auth-form" novalidate>
-            <label>Tên đăng nhập
-              <input type="text" name="loginId" autocomplete="username" placeholder="Nhập tên đăng nhập" required />
-            </label>
-            <label>Mật khẩu
-              <input type="password" name="password" autocomplete="current-password" placeholder="Nhập mật khẩu" required />
-            </label>
-            <div class="auth-login-options">
-              <label class="auth-remember">
-                <input type="checkbox" name="remember" id="rememberMe" />
-                <span>Ghi nhớ đăng nhập</span>
-              </label>
-              <button type="button" class="auth-link-btn" id="btnForgotPassword">Quên mật khẩu?</button>
-            </div>
-            <button type="submit" class="auth-submit">Đăng nhập</button>
-          </form>
+        <div class="ab-en" lang="en">
+          <h3>In English</h3>
+          <p>Cherry Scheduler is a web app that builds school timetables for primary schools, lower secondary schools and continuing-education centres in Vietnam. Schools enter classes, teachers and teaching assignments, choose from 27 kinds of teacher and subject rules, and generate the timetable with a Rust backend and an OR-Tools CP-SAT solver, then adjust it by drag and drop and export it to Excel or Word. More than 50 schools have built their timetables with it, about 2,000 classes in all; the largest has 75 classes, 125 teachers and about 2,200 lessons a week.</p>
+          <p>It is an independent, self-funded project started in December 2025 by Nguyen Hoang An in Ho Chi Minh City, built with Claude Code. Claude is not part of the product yet. Contact: <a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a> · founder: <a href="mailto:an@tkbcherry.com">an@tkbcherry.com</a>.</p>
         </div>
+      </div>
+    </section>
 
-        <div class="auth-pane" data-pane="forgot" hidden>
-          <h2>Quên mật khẩu</h2>
-          <p class="auth-sub">Nhập tên đăng nhập hoặc email đã đăng ký. Hệ thống gửi mã xác thực, sau đó gửi mật khẩu mới về email.</p>
-          <form id="forgotForm" class="auth-form" novalidate>
-            <label>Tài khoản hoặc email
-              <input type="text" name="loginOrEmail" autocomplete="username" placeholder="Nhập tài khoản hoặc email" required />
-            </label>
-            <button type="button" class="auth-btn-secondary" id="btnSendResetOtp">Gửi mã xác thực</button>
-            <div class="auth-otp-demo" id="resetOtpDemo" hidden>
-              <span>Mã xác thực: <strong id="resetOtpCode"></strong></span>
-            </div>
-            <label>Mã 6 số
-              <input type="text" name="code" inputmode="numeric" maxlength="6" placeholder="Nhập mã 6 số" />
-            </label>
-            <div class="auth-otp-demo is-success" id="resetPwdDemo" hidden>
-              <span>Mật khẩu mới: <strong id="resetNewPassword"></strong></span>
-            </div>
-            <button type="submit" class="auth-submit">Xác nhận &amp; nhận mật khẩu mới</button>
-            <button type="button" class="auth-link-btn" id="btnBackLogin">Quay lại đăng nhập</button>
-          </form>
+    <section class="ab-cta" id="lien-he">
+      <div class="ab-container">
+        <h2>Chuẩn bị thời khóa biểu cho học kỳ mới?</h2>
+        <p>Đăng ký tài khoản trường để dùng thử, hoặc gọi, nhắn Zalo 0352 261 815 để được hướng dẫn nhập dữ liệu.</p>
+        <div class="ab-cta-row">
+          <a class="ab-btn ab-btn-primary" href="#authCard" data-auth-tab="register">Đăng ký trường</a>
+          <a class="ab-btn ab-btn-ghost" href="https://zalo.me/0352261815" target="_blank" rel="noopener">Nhắn Zalo</a>
+          <a class="ab-btn ab-btn-ghost" href="mailto:contact@tkbcherry.com">Gửi email</a>
         </div>
-
-        <div class="auth-pane" data-pane="register" hidden>
-          <h2>Đăng ký trường</h2>
-          <form id="registerForm" class="auth-form auth-form-register" novalidate>
-            <div class="auth-form-row">
-              <label>Tên đăng nhập
-                <input type="text" name="loginId" autocomplete="username" placeholder="Nhập tên đăng nhập" required minlength="3" />
-              </label>
-              <label>Mật khẩu
-                <input type="password" name="password" autocomplete="new-password" placeholder="Nhập mật khẩu" required />
-              </label>
-            </div>
-            <div class="auth-form-row">
-              <label>Email
-                <input type="email" name="email" autocomplete="email" placeholder="Nhập email" required />
-              </label>
-              <label>Số điện thoại
-                <input type="tel" name="phone" autocomplete="tel" placeholder="Nhập số điện thoại" required />
-              </label>
-            </div>
-            <label>Tên trường
-              <input type="text" name="schoolName" placeholder="Nhập tên trường" required />
-            </label>
-            <button type="submit" class="auth-submit">Đăng ký trường</button>
-          </form>
-        </div>
-
-        <div class="auth-alert" id="authAlert" role="alert" hidden></div>
       </div>
     </section>
   </main>
 
-  <footer class="auth-site-footer auth-site-footer--compact">
-    <div class="auth-site-footer-inner">
-      <span>Bản quyền <strong>Cherry Scheduler</strong></span>
-      <span>Địa chỉ: 424, đường Nhuận Đức, xã Nhuận Đức, TP.HCM</span>
-      <span><a href="tel:+84352261815">0352261815</a> · <a href="https://zalo.me/0352261815" target="_blank" rel="noopener">Zalo</a></span>
+  <footer class="ab-footer">
+    <div class="ab-container">
+      <div class="ab-footer-grid">
+        <div>
+          <a class="ab-brand" href="/">
+            <img src="/assets/cherry-scheduler-logo.png?v=2" width="34" height="34" alt="" />
+            <span>Cherry Scheduler</span>
+          </a>
+          <p>Phần mềm xếp thời khóa biểu tự động cho trường tiểu học, THCS và trung tâm GDNN-GDTX. Xếp nhanh, chuẩn xác – Nhàn hơn mỗi ngày.</p>
+        </div>
+        <div>
+          <h2>Liên kết</h2>
+          <ul>
+            <li><a href="#ve-chung-toi">Về chúng tôi</a></li>
+            <li><a href="#authCard" data-auth-tab="login">Đăng nhập</a> / <a href="#authCard" data-auth-tab="register">Đăng ký trường</a></li>
+            <li><a href="/privacy">Chính sách bảo mật</a></li>
+            <li><a href="/terms">Điều khoản sử dụng</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2>Liên hệ</h2>
+          <ul>
+            <li>424 đường Nhuận Đức, xã Nhuận Đức, TP. Hồ Chí Minh</li>
+            <li>Điện thoại: <a href="tel:+84352261815">0352 261 815</a> · <a href="https://zalo.me/0352261815" target="_blank" rel="noopener">Zalo</a></li>
+            <li>Email: <a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="ab-footer-bottom">© 2026 Cherry Scheduler · Cherry Software</div>
     </div>
   </footer>
+
+  <script>
+  (function(){
+    var tabs = document.querySelector(".ab-tabs");
+    if(!tabs) return;
+    var buttons = Array.prototype.slice.call(tabs.querySelectorAll(".ab-tab"));
+    function select(btn, focus){
+      buttons.forEach(function(b){
+        var on = b === btn;
+        b.setAttribute("aria-selected", on ? "true" : "false");
+        b.tabIndex = on ? 0 : -1;
+        var panel = document.getElementById(b.getAttribute("aria-controls"));
+        if(panel) panel.setAttribute("data-active", on ? "true" : "false");
+      });
+      if(focus) btn.focus();
+    }
+    buttons.forEach(function(b, i){
+      b.addEventListener("click", function(){ select(b, false); });
+      b.addEventListener("keydown", function(e){
+        var next = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : null;
+        if(next === null) return;
+        e.preventDefault();
+        select(buttons[(next + buttons.length) % buttons.length], true);
+      });
+    });
+    tabs.hidden = false;
+    document.documentElement.classList.add("ab-js");
+  })();
+  </script>
+  <script>
+  (function(){
+    function openTab(name){
+      var card = document.getElementById("authCard");
+      if(!card) return;
+      var tab = card.querySelector('.auth-tab[data-tab="' + name + '"]');
+      if(tab && !tab.classList.contains("is-active")) tab.click();
+    }
+    document.addEventListener("click", function(e){
+      var link = e.target.closest && e.target.closest("[data-auth-tab]");
+      if(!link) return;
+      openTab(link.getAttribute("data-auth-tab"));
+    });
+  })();
+  </script>
 </body>
 </html>

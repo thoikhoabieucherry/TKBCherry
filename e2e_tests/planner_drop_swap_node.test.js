@@ -92,6 +92,7 @@ function loadPlanner(data, {withConstraints = false} = {}){
     getMonMeta(mon){ return context.CURRENT_MON_META[mon] || {sotiet:0, gioihan:1}; },
     countMon(mon){ return context.countMonInTKB(data.tkb[context.currentLop], mon); },
     monCanonicalKey(mon){ return String(mon || "").trim().toLowerCase(); },
+    monMatches(a, b){ return !!a && !!b && context.monCanonicalKey(a) === context.monCanonicalKey(b); },
     cellMon:lessonValue,
     isFixed(v){ return !!(v && typeof v === "object" && v.fixed); },
     getLopCanonById(id){ return String(id); },

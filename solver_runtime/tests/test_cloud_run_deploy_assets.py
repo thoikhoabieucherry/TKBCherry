@@ -159,7 +159,7 @@ class CloudRunDeployAssetTests(unittest.TestCase):
         self.assertIn("[string]$RuntimeServiceAccount", self.script)
         self.assertIn("--service-account=$RuntimeServiceAccount", self.script)
         self.assertIn(
-            "--labels=app=tkb-cherry,component=solver,runtime=cloud-run",
+            "--labels=app=cherry,component=solver,runtime=cloud-run",
             self.script,
         )
         self.assertIn("TKB_CLOUD_RUN_MAX_SOLVE_SECONDS=285", self.script)

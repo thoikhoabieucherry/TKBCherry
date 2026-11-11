@@ -3438,8 +3438,12 @@ function buildMenuPopup(items, left, top, level){
     });
     return out;
   }
+  // Trả null khi không có dòng Tiết chuẩn đúng khối; 0 khi có dòng nhưng sotiet=0.
+  // Quan trọng: không được gộp max giữa các khối — môn CNghệ khối 9 = 0 vẫn phải là 0
+  // dù khối 6/7/8 có 1–2 tiết (lỗi thống kê Yêu cầu cố định lớp: 31 thay vì 30).
   function standardPeriodsForClassSubject(cls, mon, lop){
     const grades=gradeTokensForClass(cls, lop);
+    let found=false;
     let best=0;
     (D().mon || []).forEach(m=>{
       const ten=String(m?.ten || m?.mon || m?.mamon || m?.ma || m?.id || '').trim();
@@ -3449,10 +3453,11 @@ function buildMenuPopup(items, left, top, level){
       let sameGrade=!grades.size || !rowTokens.size;
       rowTokens.forEach(t=>{ if(grades.has(t)) sameGrade=true; });
       if(!sameGrade) return;
+      found=true;
       const n=periodValueFromRecord(m);
       if(Number.isFinite(n) && n > best) best=n;
     });
-    return best;
+    return found ? best : null;
   }
   function assignmentPeriodsFor(cls, mon, lop, periodBySubject){
     const override=matrixNumberForClassSubject(D().pccmTietMatrix || {}, cls, mon, lop);
@@ -3460,7 +3465,8 @@ function buildMenuPopup(items, left, top, level){
     const fromAssignment=assignmentPeriodsFromPccmHelpers(cls, mon, lop);
     if(fromAssignment > 0) return fromAssignment;
     const byGrade=standardPeriodsForClassSubject(cls, mon, lop);
-    if(Number.isFinite(byGrade) && byGrade > 0) return byGrade;
+    // Có dòng đúng khối (kể cả 0) → dừng; không vay số tiết từ khối khác / monWeeklyPeriods.
+    if(byGrade != null) return byGrade;
     const candidates=subjectKeyCandidates(mon).map(x=>norm(x));
     for(const k of candidates){
       const n=Number(periodBySubject.get(k) || 0);
@@ -3474,7 +3480,8 @@ function buildMenuPopup(items, left, top, level){
     const fromAssignment=assignmentPeriodsFromPccmHelpers(cls, mon, lop);
     if(fromAssignment > 0) return fromAssignment;
     const byGrade=standardPeriodsForClassSubject(cls, mon, lop);
-    if(Number.isFinite(byGrade) && byGrade > 0) return byGrade;
+    // Có dòng đúng khối (kể cả 0) → dừng; không vay số tiết từ khối khác / monWeeklyPeriods.
+    if(byGrade != null) return byGrade;
     const candidates=subjectKeyCandidates(mon).map(x=>norm(x));
     for(const k of candidates){
       const n=Number(periodBySubject.get(k) || 0);
@@ -6275,9 +6282,11 @@ function gradeListText(grades){
     const map=new Map();
     const keyOf = type==='class' ? (r=>norm(r.rawMon || r.mon)) : type==='teacher' ? (r=>norm(r.rawMon || r.mon)+'|'+String(r.classId)) : type==='subject' ? (r=>String(r.classId)) : type==='room' ? (r=>norm(r.rawMon || r.mon)+'|'+String(r.classId)) : (r=>norm(r.rawMon || r.mon)+'|'+String(r.classId));
     source.forEach(r=>{
+      const n=Number(r.count || 0);
+      if(!(n > 0)) return;
       const k=keyOf(r);
       if(!map.has(k)) map.set(k,{mon:r.mon, lopId:r.classId, teacher:r.teacher, room:r.room, count:0, lop:r.lop});
-      map.get(k).count += Number(r.count || 0);
+      map.get(k).count += n;
     });
     const rows=Array.from(map.values()).sort((a,b)=>String(a.mon||a.lopId).localeCompare(String(b.mon||b.lopId),'vi'));
     let s=0, ch=0, sc=0;

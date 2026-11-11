@@ -54,6 +54,7 @@ function load(data, extra = {}){
   const context = {
     window, DATA:data, DAYS, SANG:5, CHIEU:5, console, setTimeout, clearTimeout, JSON, Object, Array, Map, Set, String, Number,
     busy:false,
+    monMatches(a, b){ return !!a && !!b && a === b; },
     cellMon(v){ if(v === "OFF" || v == null || v === "") return ""; return typeof v === "string" ? v : String(v.mon || ""); },
     isFixed(v){ return !!(v && typeof v === "object" && v.fixed); },
     getLopCanonById(id){ const l = data.lop.find(x => String(x.id) === String(id)); return l ? l.ten : String(id); },
