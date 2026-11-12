@@ -9,6 +9,19 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-12 THCS Quang Trung (obo2ow4q6d4) — CP-SAT local, môn liên kết cuối buổi — ĐÃ GHI vào kho
+
+- **Yêu cầu chủ dự án**: giữ mọi luật cũ; thêm luật "môn liên kết gom buổi hoặc nằm cuối buổi, không xen giữa chính khoá".
+  Nhóm ngoài chính khoá: AVNN, IC3, KNS, STEM, TCTA, AI, TS10 (trong mỗi buổi các môn này phải là đoạn cuối liền nhau hoặc cả buổi).
+- **Script**: `scratch/quangtrung/` — `solve_qt.py` (CP-SAT, đọc `live.json` = DATA trang; luật: ô nghỉ lớp/GV/môn, ghim, giới hạn/ngày,
+  allowMorning, oneSessionPerDay, tiết đôi min, nhóm không chung buổi, ghép 2 GV, GV maxPeriods/maxDays/maxSessions), `verify_qt.py` (kiểm độc lập).
+- **Kết quả**: giữ đủ 95 ghim thì tối thiểu 3 buổi xen (chứng minh OPTIMAL); thêm 1 GV liên kết bất kỳ nhóm vẫn ≥2. Chủ dự án đồng ý
+  BỎ 7 ghim (`scratch/quangtrung/unpin.json`: 6A2 TCTA, 6A3 TCTA, 7A4 MT, 7A5 AVNN, 9A1 AI, 9A1 CN, 9A6 AI) → 0 buổi xen.
+- **Đã ghi kho 12/11**: 749 tiết, 88 ghim; GV 272 buổi, 8 buổi 1 tiết, 17 tiết trống, 0 trống đôi (lịch cũ: 264/0/20/0, 30 buổi xen).
+  Web "Kiểm tra ràng buộc": 287 luật, 0 chưa đạt. Sao lưu lịch cũ: localStorage `TKB_BACKUP_BEFORE_CPSAT::obo2ow4q6d4` (trình duyệt trong app)
+  + `scratch/quangtrung/backup_before_cpsat_*.json`.
+- Luật "môn liên kết cuối buổi" CHƯA có trong engine Cherry/Yêu cầu của kho — bấm Cherry trên web có thể xếp xen lại.
+
 ## 2026-11-09 CHỮA CHÁY: TẢI Cherry.zip THAY Cherry.exe — ĐÃ DEPLOY (Netlify + tkbcherry.com)
 
 - **Chủ dự án**: "chữa cháy bằng cách thay vì tải trực tiếp exe thì đóng gói nó vào zip thử" (Cherry.exe chưa ký số, nhiều máy/trình duyệt
