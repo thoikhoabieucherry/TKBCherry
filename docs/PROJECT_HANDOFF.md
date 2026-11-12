@@ -20,6 +20,9 @@
 - **Đã ghi kho 12/11**: 749 tiết, 88 ghim; GV 272 buổi, 8 buổi 1 tiết, 17 tiết trống, 0 trống đôi (lịch cũ: 264/0/20/0, 30 buổi xen).
   Web "Kiểm tra ràng buộc": 287 luật, 0 chưa đạt. Sao lưu lịch cũ: localStorage `TKB_BACKUP_BEFORE_CPSAT::obo2ow4q6d4` (trình duyệt trong app)
   + `scratch/quangtrung/backup_before_cpsat_*.json`.
+- **Ghi lại lần 2 (12/11, cùng ngày)** — gỡ buổi GV 1 tiết: bỏ thêm ghim 7A2 STEM thu2|chieu|3 (`unpin8.json`), phạt buổi 1 tiết ×1000
+  (`--wsingle 1000 --hint`). Kết quả: 0 buổi 1 tiết, 265 buổi, 15 tiết trống, 0 trống đôi, 0 buổi xen; 749 tiết, 87 ghim; web 287 luật 0 chưa đạt.
+  Sao lưu bản lần 1: localStorage `TKB_BACKUP_BEFORE_CPSAT2::obo2ow4q6d4`. Giữ ghim 7A2 STEM thì tốt nhất còn 2 buổi 1 tiết (GEMS1).
 - Luật "môn liên kết cuối buổi" CHƯA có trong engine Cherry/Yêu cầu của kho — bấm Cherry trên web có thể xếp xen lại.
 
 ## 2026-11-09 CHỮA CHÁY: TẢI Cherry.zip THAY Cherry.exe — ĐÃ DEPLOY (Netlify + tkbcherry.com)
