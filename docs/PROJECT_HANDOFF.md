@@ -23,6 +23,10 @@
 - **Ghi lại lần 2 (12/11, cùng ngày)** — gỡ buổi GV 1 tiết: bỏ thêm ghim 7A2 STEM thu2|chieu|3 (`unpin8.json`), phạt buổi 1 tiết ×1000
   (`--wsingle 1000 --hint`). Kết quả: 0 buổi 1 tiết, 265 buổi, 15 tiết trống, 0 trống đôi, 0 buổi xen; 749 tiết, 87 ghim; web 287 luật 0 chưa đạt.
   Sao lưu bản lần 1: localStorage `TKB_BACKUP_BEFORE_CPSAT2::obo2ow4q6d4`. Giữ ghim 7A2 STEM thì tốt nhất còn 2 buổi 1 tiết (GEMS1).
+- **Ghi lại lần 3 (12/11)** — thêm luật "mỗi môn tối đa 2 tiết/buổi" (`--max2`); bỏ thêm ghim 7A2 IC3 thu4|chieu|3 + 8A1 MT thu4|chieu|3
+  (`unpin10.json`; giữ 2 ghim này thì tối thiểu 2 buổi xen). Kết quả `web_tkb_G.json`: 0 lỗi, 0 xen, 0 buổi 1 tiết, 262 buổi, 19 trống,
+  1 trống đôi; 749 tiết, 85 ghim; web 287 luật 0 chưa đạt. Sao lưu bản lần 2: `TKB_BACKUP_BEFORE_CPSAT3::obo2ow4q6d4`.
+  Luật 2 tiết/buổi cũng CHƯA có trong Yêu cầu của kho.
 - Luật "môn liên kết cuối buổi" CHƯA có trong engine Cherry/Yêu cầu của kho — bấm Cherry trên web có thể xếp xen lại.
 
 ## 2026-11-09 CHỮA CHÁY: TẢI Cherry.zip THAY Cherry.exe — ĐÃ DEPLOY (Netlify + tkbcherry.com)
