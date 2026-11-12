@@ -9,6 +9,14 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-12 THCS Củ Chi TKB số 6 (af5ldw7i8y6) — xếp lại TATC / Bản ngữ / THQT trái buổi — ĐÃ GHI vào kho
+
+- Yêu cầu: các môn liên kết TATC, Bản ngữ (GV TABN), THQT/Tin QT tạm ngưng nay học lại; lấy phân công từ TKB số 4 (af5ldw7i8y4), xếp vào TKB số 6, nguyên tắc trái buổi.
+- Công cụ: `scratch/af5ldw/solve_re2.py` (CP-SAT, .venv) + `build_verify.py` (kiểm tra độc lập). Giữ nguyên lịch chính; chỉ cho đổi chỗ tiết đơn cùng lớp/ngày/buổi (phạt). Mỗi lớp ≤1 khối liên kết/ngày, buổi trái liền mạch, GV liên kết ≤6 tiết loại này/ngày, ưu tiên gộp vào buổi trái đã có tiết, ít buổi GV mới, ít tiết trống, gần vị trí TKB 4.
+- Kết quả: 95 tiết (31 khối, gồm 7 nhóm dayGhep THQT DG032–DG039) ghim trái buổi; đổi 1 cặp tiết chính 6A10 thứ 3 sáng (Anh t3 ↔ Văn t4) để cô A.Linh có chỗ cho TATC 7A2. 0 trùng GV / 0 vi phạm giờ nghỉ / 0 t5 sáng+t1 chiều / phòng Tin ≤3; tiết trống GV 77→78; buổi trái HS 181→202.
+- Ghi web: thêm ô ghim, xoá khoá ô (fixedOff.class + tkbUserOff) ở các ô đó, chỉ THÊM khoá còn thiếu từ TKB 4 vào pccmMatrix/pccmTietMatrix/pccmGioihanMatrix/tkbLessonTeachers/tkbLessonRooms + 7 dayGhep. Có chặn nếu `_updatedAt` khác bản đã tải. Sao lưu localStorage (trình duyệt trong app) `TKB_BACKUP_BEFORE_RELINK::af5ldw7i8y6`.
+- Kiểm tra web sau khi tải lại: 2381 tiết, 95 tiết liên kết; "Kiểm tra ràng buộc — 542 luật, 38 chưa đạt" — cả 38 là "AI tiết đôi ≥ 1" khối 8/9 (TKB 6 chưa có tiết AI nào, có từ trước, không liên quan).
+
 ## 2026-11-12 THCS Quang Trung (obo2ow4q6d4) — CP-SAT local, môn liên kết cuối buổi — ĐÃ GHI vào kho
 
 - **Yêu cầu chủ dự án**: giữ mọi luật cũ; thêm luật "môn liên kết gom buổi hoặc nằm cuối buổi, không xen giữa chính khoá".
