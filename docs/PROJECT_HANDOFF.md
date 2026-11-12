@@ -9,6 +9,16 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-12 THCS Củ Chi TKB số 6 (af5ldw7i8y6) — tối ưu toàn trường + GV ≤8 tiết/ngày + Tin QT Ti.Thuận + phòng Tin — ĐÃ GHI vào kho
+
+- Yêu cầu: tối ưu chỗ chưa tốt; T.Trung, A.Dung ≤8 tiết/ngày; Tin QT của Ti.Thuận né sáng thứ 2 và tiết 3–5 sáng thứ 3, thứ 5; thống kê phòng Tin.
+- Mô hình `scratch/af5ldw/solve_cc.py` (CP-SAT, .venv): giữ mọi ghim, ô nghỉ lớp/GV/môn, giới hạn tiết/ngày (pccmGioihan/mon; không tạo thêm ngày vượt so với lịch gốc vì vài ngày khối 9 đã vượt do ô ghim), tiết đôi, avoidBreakPair, oneSessionPerDay, Tin ≤3/tiết (timeLimit), noMorningP5AfternoonP1, oneLocationPerSession, maxOneMovePerSession/gapBetweenLocations, maxSessions; dayGhep nhiều lớp tính GV 1 lần + cùng giờ. Thêm: không 2 tiết trống liền; GV khác không vượt mức tối đa hiện có; `--rooms` = Tin+Tin QT ≤3 phòng/tiết, buổi chính Điểm 1 ≤2, Điểm 2 ≤1 (tkbSubjectRooms: P1,P2 Điểm 1; P3 Điểm 2); `--release "7A5|THQT,7A9|THQT"` bỏ ghim xếp lại trái buổi; TFORBID cho Ti.Thuận. `--fixcur` kiểm tra mô hình nhận lịch hiện tại (khớp 726 buổi/78 trống/8 buổi 1 tiết).
+- Kiểm tra độc lập: `verify_cc.py`, `stats.py`, `rooms.py` (thống kê phòng Tin theo tiết).
+- Kết quả ghi (web_tkb_C2.json, 422 ô): buổi GV 726→721, tiết trống 78→48, buổi 1 tiết 8→9, T.Trung max 8, A.Dung max 8; Tin QT 7A5 → sáng thứ 6 t4–5, 7A9 → sáng thứ 4 t4–5 (ô cũ khoá lại, ô mới mở khoá); phòng Tin: 0 tiết cần >3 phòng (trước 1). Còn 7 lượt GV-ngày 9–10 tiết (Nhạc.Minh/Hòa/Hiền, TD.Quí, T.Nhơn, SĐ.Ngân) do nhiều tiết ghim.
+- Lúc ghi, kho đã bị đổi nhãn THQT ↔ "THQT (ghép)" trên web (dayGhep/pccm/tkb, chỉ đổi tên) → áp lại theo nhãn mới (live2.json) rồi ghi, có chặn `_updatedAt`. Sao lưu localStorage `TKB_BACKUP_BEFORE_OPT::af5ldw7i8y6`.
+- Web sau khi tải lại: 2381 tiết, 687 ghim; "542 luật, 38 chưa đạt" — vẫn chỉ là AI tiết đôi khối 8/9 có từ trước.
+- Lưu ý: luật né giờ Ti.Thuận, phòng Tin theo điểm, ≤8 tiết/ngày chỉ có trong mô hình local, chưa có trong Yêu cầu web — bấm Cherry trên web có thể phá. teacherLocation (Ti.Thuận Điểm 1 thứ 2, 6) chưa mô hình hoá.
+
 ## 2026-11-12 THCS Củ Chi TKB số 6 (af5ldw7i8y6) — xếp lại TATC / Bản ngữ / THQT trái buổi — ĐÃ GHI vào kho
 
 - Yêu cầu: các môn liên kết TATC, Bản ngữ (GV TABN), THQT/Tin QT tạm ngưng nay học lại; lấy phân công từ TKB số 4 (af5ldw7i8y4), xếp vào TKB số 6, nguyên tắc trái buổi.
