@@ -27,6 +27,9 @@
   (`unpin10.json`; giữ 2 ghim này thì tối thiểu 2 buổi xen). Kết quả `web_tkb_G.json`: 0 lỗi, 0 xen, 0 buổi 1 tiết, 262 buổi, 19 trống,
   1 trống đôi; 749 tiết, 85 ghim; web 287 luật 0 chưa đạt. Sao lưu bản lần 2: `TKB_BACKUP_BEFORE_CPSAT3::obo2ow4q6d4`.
   Luật 2 tiết/buổi cũng CHƯA có trong Yêu cầu của kho.
+- **Ghi lại lần 4 (12/11)** — cấm cứng 2 tiết trống liền (`--nogap2`) và buổi GV 1 tiết (`--nosingle`), giữ `--max2`, `unpin10.json`.
+  `web_tkb_I.json`: 0 lỗi, 0 xen, 0 buổi 1 tiết, 0 trống đôi, 265 buổi, 20 trống; 749 tiết, 85 ghim; web 287 luật 0 chưa đạt.
+  Sao lưu bản lần 3: `TKB_BACKUP_BEFORE_CPSAT4::obo2ow4q6d4`.
 - Luật "môn liên kết cuối buổi" CHƯA có trong engine Cherry/Yêu cầu của kho — bấm Cherry trên web có thể xếp xen lại.
 
 ## 2026-11-09 CHỮA CHÁY: TẢI Cherry.zip THAY Cherry.exe — ĐÃ DEPLOY (Netlify + tkbcherry.com)
