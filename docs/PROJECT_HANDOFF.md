@@ -9,6 +9,18 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-13 THCS Củ Chi TKB số 6 (af5ldw7i8y6) — lượt 4: gom lịch TD.Quí và TD.Tiền — ĐÃ GHI vào kho
+
+- Chủ dự án thấy thầy Quí và thầy Tiền (thể dục) còn gom được: mỗi thầy có 1 tiết HĐTN lẻ riêng một buổi (6A6 chiều thứ 4,
+  8A4 sáng thứ 6). Giữ ≤8 tiết/ngày thì KHÔNG gom được (thể dục đã ghim; thứ 2 lớp đã đủ 2 HĐTN ghim; ô trống khác là buổi
+  nghỉ của lớp) → chủ dự án ĐỒNG Ý cho hai thầy có 1 ngày 9 tiết (Quí thứ 3, Tiền thứ 4).
+- Lệnh: `solve_cc.py 1500 --rooms --wmove 0 --w 14 --wsingle 200 --cap "T.Trung=8,A.Dung=8,TD.Quí=9,TD.Tiền=9" --nosingle
+  --single-ok "$(cat single_ok.txt)"` (single_ok.txt = mọi GV trừ hai thầy → luật "không buổi 1 tiết" chỉ cứng với hai thầy).
+- Đã ghi 368 ô (`_updatedAt` 1794586301386, hash tkb 1297629211): 708 buổi dạy / 24 tiết trống / 8 buổi 1 tiết / 0 tách môn.
+  Quí chỉ dạy thứ 2–3, Tiền thứ 2–4. Web kiểm lại: 542 luật, 38 chưa đạt (vẫn là 38 luật AI tiết đôi có sẵn).
+- Sao lưu: `TKB_BACKUP_BEFORE_OPT4::af5ldw7i8y6`. Script ghi nén: `scratch/af5ldw/mkwrite3.py <web_tkb> <out.js> <base.json> <KEY>`;
+  xem lưới lịch 1 GV: `scratch/af5ldw/tt.py <web_tkb> <tên>`. Kho hiện tại trên web = `scratch/af5ldw/cur_web7.json`.
+
 ## 2026-11-13 THCS Củ Chi TKB số 6 (af5ldw7i8y6) — lượt 3: sửa luật "cùng môn trong buổi phải liền nhau" — ĐÃ GHI vào kho
 
 - Chủ dự án báo bản lượt 2 vi phạm nhiều luật "2 tiết cùng môn trong 1 buổi phải liền nhau": bản lượt 2 có 26 buổi-lớp tách
