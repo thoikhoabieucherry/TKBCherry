@@ -9,6 +9,14 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-13 THCS Củ Chi TKB số 6 (af5ldw7i8y6) — tối ưu lượt 2 (bỏ phạt đổi ô) — ĐÃ GHI vào kho
+
+- User: "chưa tối ưu lắm". Nguyên nhân: lượt trước phạt mỗi ô đổi (`--wmove 1`, chiếm ~350 điểm mục tiêu) + chỉ chạy 15 phút/8 luồng.
+- Chạy `solve_cc.py 1800 --rooms --wmove 0 --w 14` (từ lịch đang trên web: `cur.json` = live2 + C2) → D; rồi `--wsingle 200 --hint web_tkb_D.json` → E (`web_tkb_E.json`). Mục tiêu web (menu "Tối ưu"): buổi dạy 721→697, 1 tiết trống 48→24, 2 tiết trống 0, buổi 1 tiết 9→8. 789 ô đổi.
+- 8 buổi 1 tiết còn lại: Nhạc.Dương ×4 bắt buộc (fixedOff chiều tiết 2–5), TPT.Ngân ×1 bắt buộc (HĐTN 8A15 có 2 tiết ghim cùng buổi), A.Hải/A.Lan/A.Nga ×1 (cấm cứng `--nosingle` → INFEASIBLE cùng Nhạc.Dương+TPT.Ngân miễn trừ; chưa rõ nguyên nhân).
+- Ghi bằng `write_E2.js`: chặn theo `_updatedAt` + dấu vân tay djb2 của JSON.stringify(DATA.tkb) (Python tính trùng: dumps ensure_ascii=False, separators=(',',':'), băm theo UTF-16). Sao lưu `TKB_BACKUP_BEFORE_OPT2::af5ldw7i8y6`. Sau tải lại: vân tay = bản E, web đếm 8 buổi 1 tiết, "542 luật, 38 chưa đạt" (chỉ AI tiết đôi, có từ trước).
+- Trình duyệt trong app hay bị đăng xuất tkbcherry.com sau khi app/khung trình duyệt mở lại — cần user đăng nhập lại.
+
 ## 2026-11-12 THCS Củ Chi TKB số 6 (af5ldw7i8y6) — tối ưu toàn trường + GV ≤8 tiết/ngày + Tin QT Ti.Thuận + phòng Tin — ĐÃ GHI vào kho
 
 - Yêu cầu: tối ưu chỗ chưa tốt; T.Trung, A.Dung ≤8 tiết/ngày; Tin QT của Ti.Thuận né sáng thứ 2 và tiết 3–5 sáng thứ 3, thứ 5; thống kê phòng Tin.
