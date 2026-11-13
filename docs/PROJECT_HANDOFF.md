@@ -9,6 +9,23 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-13 THCS Củ Chi TKB số 6 (af5ldw7i8y6) — lượt 3: sửa luật "cùng môn trong buổi phải liền nhau" — ĐÃ GHI vào kho
+
+- Chủ dự án báo bản lượt 2 vi phạm nhiều luật "2 tiết cùng môn trong 1 buổi phải liền nhau": bản lượt 2 có 26 buổi-lớp tách
+  môn (TKB gốc có 0). Mô hình `scratch/af5ldw/solve_cc.py` trước đó KHÔNG có luật này. Đã thêm: cùng môn trong một buổi phải
+  liền nhau và ≤ max(2, số tiết ghim) tiết/buổi (trừ HĐTN). Kiểm bằng `scratch/af5ldw/split.py <web_tkb>` (phải = 0).
+  **Bài học: mọi mô hình CP-SAT local cho trường khác phải có luật này ngay từ đầu.**
+- Chủ dự án nhắc: chỉ xếp lịch, KHÔNG sửa phần mềm. Không có mã nguồn nào bị đổi; chỉ dữ liệu kho của trường + file này.
+- Chạy 60 phút (14 worker, hint từ bản sửa) rồi giải lại 15 phút vì giữa chừng có người ghim thêm ô 9A18 thứ 2 sáng tiết 3 (KHTN)
+  trên web (script ghi tự dừng do `_updatedAt` đổi → chụp lại kho `cur_web5.json`, giải lại, ô ghim giữ nguyên).
+- Kết quả đã ghi (1.314 ô, `_updatedAt` 1794582486821, hash tkb 398591931): 712 buổi dạy / 23 tiết trống / 10 buổi 1 tiết /
+  0 hai tiết trống liền / 0 buổi tách môn. T.Trung ≤8, A.Dung ≤7 tiết/ngày; Tin QT Ti.Thuận né đúng giờ; phòng Tin ≤3/tiết.
+  Ngày >8 tiết chỉ còn Nhạc.Minh/Hòa/Hiền (tiết ghim). Bộ giải chưa chứng minh tối ưu (bound 4817 so với 6532).
+- Kiểm trên web sau khi tải lại: "542 luật, 38 chưa đạt" — vẫn đúng 38 luật "AI tiết đôi" có sẵn từ trước.
+- Sao lưu trước khi ghi: localStorage trình duyệt trong app, khoá `TKB_BACKUP_BEFORE_OPT3::af5ldw7i8y6`.
+- Ghi chú kỹ thuật: trang chặn fetch tới 127.0.0.1, nên script ghi phải gửi thẳng; dùng dạng nén (6 ký tự/ô + bảng nhãn,
+  kiểm hash trước và sau khi áp) để script chỉ ~9KB.
+
 ## 2026-11-13 THCS Củ Chi TKB số 6 (af5ldw7i8y6) — tối ưu lượt 2 (bỏ phạt đổi ô) — ĐÃ GHI vào kho
 
 - User: "chưa tối ưu lắm". Nguyên nhân: lượt trước phạt mỗi ô đổi (`--wmove 1`, chiếm ~350 điểm mục tiêu) + chỉ chạy 15 phút/8 luồng.
