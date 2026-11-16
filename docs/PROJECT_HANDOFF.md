@@ -9,6 +9,21 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-16 (lượt 2) THCS Phạm Văn Hai TKB số 4 — "SAU KHI XEM TKB": 5 GV giảm buổi — ĐÃ GHI vào kho
+
+- Yêu cầu thêm (cuối file `/Users/cherry/Downloads/30.11.2026_ YÊU CẦU XẾP TKB.docx`): TN.An bỏ chiều T2; TN.Hảo bỏ sáng
+  T5 hoặc T7; AV.Linh bỏ chiều T2 hoặc T7; TO.Trang bỏ sáng T5 hoặc T6 (nếu được); TO.Gái bỏ sáng T6 (nếu được).
+  Hiểu "giảm thêm 1 buổi" = buổi đó trống VÀ tổng số buổi/tuần giảm 1 (không bù buổi khác).
+- `solve_pvh.py` thêm `--sess "GV=buổi/buổi:tối_đa_buổi:H|S"` và `--capsess web_tkb_B.json` (GV khác tăng buổi so với bản
+  đang trên web bị phạt `--wover` 80; GV có tên trong --sess thì cấm tăng). Bài học: lần chạy đầu không chặn tăng buổi
+  → 5 cô giảm nhưng ~15 GV khác tăng 1–2 buổi; chặn cứng thì cô Gái không giảm được → dùng phạt.
+  Lệnh: `solve_pvh.py 1500 --w 14 --in cur2.json --gdtc-cap 4 --wmove 2 --hint web_tkb_C.json --capsess web_tkb_B.json --sess "..."`.
+- Kết quả đã ghi (427 ô, `_updatedAt` 1794843398395, hash tkb 374824338): đủ 5 yêu cầu (An bỏ chiều T2, Hảo bỏ sáng T7,
+  Linh bỏ chiều T2, Trang bỏ sáng T6, Gái bỏ sáng T6); không GV nào tăng buổi, thêm 4 GV giảm 1 buổi. 385 buổi dạy
+  (trước 394), 20 tiết trống, 0 buổi 1 tiết. Đã thêm 5 buổi trên vào `fixedOff.teacher` để giữ luật.
+  Web "Kiểm tra ràng buộc": 220 luật, 0 chưa đạt. Sao lưu: localStorage `TKB_BACKUP_BEFORE_PVH4b::ry7gvvz7vk4`.
+  Ghi bằng `saveStore({force:true, syncRemote:true})` + đọc lại máy chủ + tải lại trang: khớp.
+
 ## 2026-11-16 THCS Phạm Văn Hai TKB số 4 (sid ry7gvvz7vk4) — xếp theo "YÊU CẦU XẾP TKB LẦN 4 (áp dụng 30/11/2026)" — ĐÃ GHI vào kho
 
 - Nguồn yêu cầu: `/Users/cherry/Desktop/AI/phancong/phamvanhai/30.11.2026_ YÊU CẦU XẾP TKB.docx` (+ yêu cầu lần 1 01/9 cùng thư mục).
