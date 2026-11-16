@@ -9,6 +9,31 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-16 THCS Phạm Văn Hai TKB số 4 (sid ry7gvvz7vk4) — xếp theo "YÊU CẦU XẾP TKB LẦN 4 (áp dụng 30/11/2026)" — ĐÃ GHI vào kho
+
+- Nguồn yêu cầu: `/Users/cherry/Desktop/AI/phancong/phamvanhai/30.11.2026_ YÊU CẦU XẾP TKB.docx` (+ yêu cầu lần 1 01/9 cùng thư mục).
+  44 lớp; buổi chính: khối 7, 9 sáng, khối 6, 8 chiều; GDTC/IC3/Toán khoa… học trái buổi (ô ghim).
+- Áp dụng (`scratch/pvh/prep.py` → `cur.json`): bỏ TATC 9A1/9A2 (2 tiết ghim chiều → nghỉ, 3 tiết sáng → mô hình dồn
+  buổi sáng, ô trống ở cuối buổi); ÂN.Công nghỉ sáng T2 + cả T7; TI.Luật, TI.Thương nghỉ T3, T5; phân công lại LSĐL
+  (cô Đức nghỉ hộ sản: 6A7→SĐ.Dung, 8A10→SĐ.Anh, 7A2→SĐ.Vinh, 7A3/7A4→SĐ.Khương, 8A1/2/3/8→GV mới `SĐ.Giang`
+  Huỳnh Thị Lệ Giang, chỉ chiều T3 t2–5, chiều T6 t2–5, chiều T7); lịch trực giám thị = GV nghỉ (SĐ.Tài, TC.Tâm,
+  TN.Tuấn, GD.Mai).
+- GDTC: bỏ ghim toàn bộ 88 tiết, xếp lại trái buổi (khối 2 tiết, chỉ ở vị trí bắt đầu đang dùng: sáng t1/t3, chiều
+  t2/t4), phạt sáng T2 t1–2 và chiều T2 t4–5. **Mâu thuẫn**: "tối đa 3 GV/buổi" + cô Tươi không dạy t5 chiều + thầy
+  Tâm trực T3 & chiều T6 → không xếp được 23 lớp khối 7, 9 buổi chiều. Trường trả lời: **cho phép 4 GV/buổi nếu khó**
+  → cứng ≤4, phạt mỗi GV thứ 4. Kết quả: chỉ chiều T3 có 4 GV.
+- Mô hình `scratch/pvh/solve_pvh.py` (chép từ `scratch/af5ldw/solve_cc.py`, thêm: bỏ ghim tự động, ô FREE, phòng ≤26 lớp/tiết
+  trừ GDTC, Tin/Nhạc/IC3 ≤2/tiết, GDTC ≤N GV/buổi). Lệnh: `solve_pvh.py 1200 --w 14 --gdtc-cap 4 --hint web_tkb_t.json`.
+  Kiểm độc lập `scratch/pvh/verify_pvh.py <web_tkb>`. Lịch cũ trên web vốn đúng luật cùng môn liền nhau → giữ luật đó.
+- Kết quả đã ghi (666 ô, `_updatedAt` 1794802835740, hash tkb 554459314): 394 buổi dạy (cũ 386), 16 tiết trống (cũ 65),
+  0 buổi 1 tiết, 0 trống 2 liền. Ngoại lệ: TN.Tuấn trực chiều T2 nhưng giữ 2 tiết HĐTN ghim của 8A8 (GVCN). TI.Quyên
+  1 ngày 10 tiết (như cũ, chỉ dạy T5). Web "Kiểm tra ràng buộc": **220 luật, 0 chưa đạt**.
+- Sao lưu trước khi ghi: localStorage trình duyệt trong app `TKB_BACKUP_BEFORE_PVH4::ry7gvvz7vk4` (cả DATA).
+- **Bài học ghi kho (quan trọng)**: lần ghi đầu bằng `await saveStore()` (lưu bất đồng bộ) bị ghi đè ~0,9 s sau bằng
+  đúng bản cũ (trang tự nạp lại kho khi ẩn/hiện khung trình duyệt trong lúc lệnh lưu còn treo, rồi lưu lại). Máy chủ
+  `/api/school/store` không có chống ghi đè. Cách đúng: `saveStore({force:true, syncRemote:true})` (XHR đồng bộ) rồi
+  `fetch` lại kho từ máy chủ và so hash; đợi vài giây, tải lại trang, so hash lần nữa.
+
 ## 2026-11-13/14 THCS Tăng Bạt Hổ TKB 3 (sid i350pgr8o93) — xếp lại theo phân công mới + môn liên kết buổi chiều — làm trên MÁY KHÁC (Windows), có dấu hiệu ĐÃ GHI kho
 
 > Mục này viết lại ngày 16/11 từ bản sao thư mục dự án của máy kia trên Google Drive (`scratch/tbh5/`), vì máy kia
