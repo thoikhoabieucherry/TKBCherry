@@ -36,7 +36,13 @@
   Hai bản chụp cùng kích thước (đổi chỗ tiết trong lớp không đổi độ dài) nên chưa xác nhận được bằng số liệu là f3 đã
   vào kho — **kiểm trên web TKB 3 trước khi làm tiếp**.
 - **Việc còn mở**: còn 42 chỗ liên kết xen tiết chính khoá và tiết liên kết buổi sáng (mềm, chưa ép cứng; có cờ
-  `--lk-hard`). Muốn làm tiếp trên máy Mac này thì phải chép `scratch/tbh5/` từ Drive về (file xlsx nguồn nằm ngoài repo).
+  `--lk-hard`).
+- **16/11: đã chép `scratch/tbh5/` từ Drive về máy Mac này** (53 file, khớp kích thước từng file, bỏ `__pycache__`;
+  gitignored vì chứa kho thật của trường). Chạy lại được `tbh5_solve.py` / `tbh5_verify.py` / `write.py`
+  (`tools/vps-deploy/vps_credentials.py` có sẵn). CHƯA chạy lại được `tbh5_data.py` từ file Excel: đường dẫn XLSX
+  là đường dẫn Windows của máy kia và file `phancong/tangbacho/dulieumoi2.xlsx` không có trên máy này.
+  Mẹo tải: file .py/.js trên Drive bị trang "Virus scan warning" chặn → dùng
+  `https://drive.usercontent.google.com/download?id=<id>&export=download&confirm=t`.
 
 ## 2026-11-13 THCS Củ Chi TKB số 6 (af5ldw7i8y6) — lượt 4: gom lịch TD.Quí và TD.Tiền — ĐÃ GHI vào kho
 
