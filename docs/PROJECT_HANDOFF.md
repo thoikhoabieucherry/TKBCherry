@@ -9,6 +9,35 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-13/14 THCS Tăng Bạt Hổ TKB 3 (sid i350pgr8o93) — xếp lại theo phân công mới + môn liên kết buổi chiều — làm trên MÁY KHÁC (Windows), có dấu hiệu ĐÃ GHI kho
+
+> Mục này viết lại ngày 16/11 từ bản sao thư mục dự án của máy kia trên Google Drive (`scratch/tbh5/`), vì máy kia
+> không ghi handoff cho việc này. Git máy kia dừng ở `cd3ad1e` (đã có ở đây); `scratch/tbh5/` KHÔNG có trên máy Mac này.
+> Giờ dưới đây là giờ Việt Nam (Drive lưu UTC, +7).
+
+- **Trường**: 53 lớp (CS1 34 lớp `6A1A..9A11A`, CS2 19 lớp `6A1B..9A6B`), 140 GV (kể cả GV ngoài trường), 1.919 tiết.
+  Nguồn phân công: `C:\Users\Cherry\Documents\Codex\phancong\tangbacho\dulieumoi2.xlsx` (sheet " CS1+2") trên máy kia.
+- **Thay đổi dữ liệu 13/11** (`tbh5_data.py`, `tbh5_store.py`):
+  - "GV-TCTA" (mã `GV.TCTA`) nay là cô Trương Thị Ngọc Trâm (thỉnh giảng) → mã `TA.Trâm` ở mọi nơi, kể cả luật.
+  - Thêm môn `TOKH` "Toán - Khoa học" (khối 6, 4 tiết, ≤2/buổi; có trợ giảng TO-KH); IC3 khối 6 = 2 tiết.
+  - 9A4B bỏ KNS, vẫn học STEM (thêm `9A4B|STEM` → `ST.KDI.K9B`, 1 tiết).
+  - Sửa lỗi file: cô Kim Cúc dạy 9A5 (không phải 9A2); thầy Liêm dạy 9A2 (CS2) — chủ dự án xác nhận.
+- **Mô hình** `tbh5_model.py` + `tbh5_solve.py` (CP-SAT toàn trường rồi LNS theo nhóm lớp, 20 luồng): khung buổi chiều
+  theo nhóm, GV ngoài trường gom buổi, không buổi 1 tiết, không trống 2 tiết, GVCN, STEM/KNS không sáng…
+  Ghi kho bằng `write.py` (SSH thẳng sqlite trên VPS, mặc định DRY-RUN, `--apply` mới ghi, huỷ nếu `_updatedAt` khác,
+  sao lưu trước/sau vào `/root/tkb-recovery/tbh3-<sid>-<giờ>/`); `finalize.py` = kho live + tkb/phân công/ô nghỉ mới.
+- **Lượt 1 (13/11)**: chạy a1→e1. e1 obj 5280: 0 buổi 1 tiết, 0 trống 2 tiết, 36 trống 1 tiết, thiếu TATC 10.
+  Bản chụp trước/sau ghi: `live93_1113b.json` → `live93_after.json` (≈23:41 13/11).
+- **Lượt 2 (14/11, yêu cầu cô An)**: môn liên kết (STEM, KNS, TCTA, AVBN, IC3, TOKH) xuống buổi chiều, cuối buổi,
+  KHÔNG xen kẽ tiết chính khoá; CS2 lớp 6–7 thì TCTA và AV bản ngữ bắt buộc buổi chiều (`patch4.py`, `patch5.py`).
+  Chạy f1→f3; f3 obj 5742: 0 buổi 1 tiết, 0 trống 2 tiết, 36 trống 1 tiết, còn 42 chỗ liên kết xen tiết chính khoá,
+  41 tiết TCTA/AVBN/IC3 buổi sáng (1 tiết CS2 lớp 6–7), 11 IC3 buổi sáng.
+  Bản chụp `live93_1114b.json` → `live93_after2.json` (≈15:27 14/11), `rb_out.txt` = "RB messages: 0".
+  Hai bản chụp cùng kích thước (đổi chỗ tiết trong lớp không đổi độ dài) nên chưa xác nhận được bằng số liệu là f3 đã
+  vào kho — **kiểm trên web TKB 3 trước khi làm tiếp**.
+- **Việc còn mở**: còn 42 chỗ liên kết xen tiết chính khoá và tiết liên kết buổi sáng (mềm, chưa ép cứng; có cờ
+  `--lk-hard`). Muốn làm tiếp trên máy Mac này thì phải chép `scratch/tbh5/` từ Drive về (file xlsx nguồn nằm ngoài repo).
+
 ## 2026-11-13 THCS Củ Chi TKB số 6 (af5ldw7i8y6) — lượt 4: gom lịch TD.Quí và TD.Tiền — ĐÃ GHI vào kho
 
 - Chủ dự án thấy thầy Quí và thầy Tiền (thể dục) còn gom được: mỗi thầy có 1 tiết HĐTN lẻ riêng một buổi (6A6 chiều thứ 4,
