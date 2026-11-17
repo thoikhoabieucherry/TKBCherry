@@ -9,6 +9,27 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-17 THCS Quang Trung TKB số 5 (sid obo2ow4q6d5) — xếp theo phân công HK1-30.12 + 3 ghi chú — ĐÃ GHI vào kho
+
+- Nguồn: `/Users/cherry/Desktop/AI/phancong/quangtrung/PHÂN CÔNG HK1-30.12.26.xlsx` (sheet phân công, "phan tiet 30.12" = số tiết
+  sáng-chiều từng ngày theo khối/lớp TCTA, "giao duc" = đơn vị liên kết). TKB 5 là bản sao y hệt TKB 4 (đã xếp 12/11); phân công
+  trên web đã khớp Excel (phần "dự kiến tháng 12" chưa áp). Khung ngày từng lớp đã đúng bảng phân tiết.
+- Ghi chú trường: (1) 6A2 các tiết cuối cho HS 6A4 sang học TCTA/AVNN; (2) tiết đôi bị tách 1-3; (3) lớp học 8 tiết chính khóa.
+- Mô hình `scratch/qt5/solve_qt5.py` (chép từ `scratch/quangtrung/solve_qt.py`) — **phải chạy với `--extra`** như lần 12/11
+  (không có cờ này thì luật "liên kết cuối buổi" áp riêng nhóm PARTNER và lịch hiện tại cũng không thỏa). Thêm: `--contig`
+  (cùng môn trong buổi liền nhau), `--ck7` [`--ck7soft`] (≤7 tiết chính khóa/ngày; ngoài chính khóa = AVNN, IC3, KNS, STEM, TCTA,
+  AI, TS10), `--pair64 --pair64-tcta` (ô 6A2 học mà 6A4 nghỉ phải là TCTA 6A2), `--nopair 6A2:TCTA`, `--fixcur` (dò lỗi mô hình).
+- Phát hiện: (1) AV.Hưng (TCTA/AVNN 6A2) nghỉ cả thứ Sáu → chỉ 3 ô dùng được (t4 chiều T2, T3, T4); chủ dự án chọn đặt cả 3 tiết
+  TCTA 6A2 vào đó (TCTA 6A2 thành 3 tiết lẻ, đã XOÁ luật lessonBlocks TCTA của 6A2 trên web). (3) Web có `fixedOff.subject` cấm
+  hầu hết môn chính khóa ở t4 chiều, trừ CN thứ Hai và MT thứ Ba/Tư → các lớp 8 tiết. Chiều T2 có 16 lớp 4-4 nhưng không đủ GV
+  ngoài chính khóa cùng lúc → tối thiểu vẫn 1 ngày-lớp 8 tiết (chứng minh INFEASIBLE khi ép cứng, kể cả cho dời ghim).
+- Đã ghi (552 ô, `_updatedAt` 1794903056335, hash tkb 994302393): 0 môn tách, 0 >2 tiết/buổi, 0 xen liên kết, ngày 8 tiết chính
+  khóa 6 → 1 (9A1 T2, có CN t4), GV 269 buổi (cũ 265), 22 tiết trống, 0 buổi 1 tiết, 0 trống đôi. Dời 12 ghim (chủ dự án duyệt):
+  6A1 TCTA, 6A2 AVNN, 6A3 CN, 7A4 IC3, 8A2 AVNN (t4 chiều T2); 7A1 IC3, 7A2 KNS, 8A2 IC3, 9A1 MT, 9A3 STEM (t4 chiều T3);
+  7A2 AVNN ×2 (chiều T6). Chỉ dời 9 ghim duyệt ban đầu thì INFEASIBLE.
+  Web "Kiểm tra ràng buộc": 286 luật, 0 chưa đạt. Sao lưu: localStorage `TKB_BACKUP_BEFORE_QT5::obo2ow4q6d5`.
+- Luật "≤7 tiết chính khóa", "liên kết cuối buổi", "6A2-6A4" CHƯA có trong engine Cherry — bấm xếp lại trên web có thể phá.
+
 ## 2026-11-16 (lượt 2) THCS Phạm Văn Hai TKB số 4 — "SAU KHI XEM TKB": 5 GV giảm buổi — ĐÃ GHI vào kho
 
 - Yêu cầu thêm (cuối file `/Users/cherry/Downloads/30.11.2026_ YÊU CẦU XẾP TKB.docx`): TN.An bỏ chiều T2; TN.Hảo bỏ sáng
