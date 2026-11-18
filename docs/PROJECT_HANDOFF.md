@@ -9,6 +9,26 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-18 THCS Quang Trung TKB số 5 — VA.Trường nghỉ hưu, chuyển lớp + gom lịch cô Chung — ĐÃ GHI vào kho
+
+- Yêu cầu: thầy Phạm Nhật Trường (VA.Trường) nghỉ hưu → Văn 6A2 cho VA.T Phương, Văn 7A3 cho VA.Trang, GDĐP 6A3/8A2/8A4
+  cho TN.An (cô Dương Thị Bình An). Thêm: cô Điêu Thị Thủy Chung (CN.Chung, 10 tiết CN khối 7–8) "không dạy chiều t4, đi cả ngày
+  cho tiện; không được thì thôi".
+- Làm trong `scratch/qt5b/` (solve_qt5.py chép từ qt5 + `--wmove N` phạt mỗi ô khác lịch gợi ý, `--tnogap GV` cấm tiết trống
+  của GV đó). Cùng cờ như TKB 5: `--extra --max2 --nogap2 --nosingle --contig --ck7 --ck7soft --pair64 --pair64-tcta --nopair 6A2:TCTA`.
+- Cô Chung bỏ chiều t4: KHÔNG làm — CN vốn bị `fixedOff.subject` cấm t4 chiều T3–T7, CN T2 t4 là một trong ít môn chính khóa
+  lấp được t4 chiều T2 (16 lớp, thiếu GV liên kết); ép bỏ → đổi ~150 ô và 4 ngày-lớp 8 tiết (cận dưới chứng minh). Làm phần
+  "đi cả ngày": `maxDays 2` + không tiết trống → T2 chiều t1–t4, T3 sáng t2–4 + chiều t1–3 (trước 3 ngày, 2 buổi có trống).
+- Đã ghi (35 ô ở 9 lớp, `_updatedAt` 1794967854366, hash tkb 495192473) + đổi `pccmMatrix`/`tkbLessonTeachers` 5 lớp-môn +
+  thêm `tkbConstraints.teacher['CN.Chung'].maxDaysSessions.maxDays = 2`. GV 272 buổi (trước 269); tăng 1 buổi: CN.Hiền, MT.An,
+  TN.Kiệt, TO.Hòa (chạy phạt di chuyển thấp vẫn 272 — tối ưu). VA.Trường vẫn trong danh sách GV, 0 tiết.
+  Web "Kiểm tra ràng buộc": 286 luật, 0 chưa đạt. Sao lưu: `TKB_BACKUP_BEFORE_QT5c::obo2ow4q6d5` (trước mọi thay đổi).
+- **Bài học ghi kho (2):** (1) Hash phải tính trên dữ liệu web đã vá theo ĐÚNG thứ tự khoá của web (ở đây ô buổi là
+  `chieu` trước `sang`); file solver xuất `sang` trước → hash khác dù nội dung giống → script dừng "MISMATCH". (2) MISMATCH
+  dừng TRƯỚC saveStore nhưng DATA trong trang ĐÃ bị vá; người dùng bấm chuyển trang → trang tự lưu bản vá (thiếu phần pccm).
+  Sau MISMATCH phải tải lại trang ngay; tốt hơn: vá trên bản sao (`structuredClone`) và chỉ gán vào DATA khi hash khớp.
+  Trang `/pages/sapxep` không có `schoolParam` — dùng `/api/school/store?id=<sid>`.
+
 ## 2026-11-17 THCS Quang Trung TKB số 5 (sid obo2ow4q6d5) — xếp theo phân công HK1-30.12 + 3 ghi chú — ĐÃ GHI vào kho
 
 - Nguồn: `/Users/cherry/Desktop/AI/phancong/quangtrung/PHÂN CÔNG HK1-30.12.26.xlsx` (sheet phân công, "phan tiet 30.12" = số tiết
