@@ -9,6 +9,16 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-20 ĐỒNG BỘ XẾP TKB TRƯỜNG TỪ MÁY MAC VỀ WINDOWS + GHI BÙ NHẬT KÝ AN NHƠN TÂY TKB 2 (15/11 & 18/11)
+
+- **Đồng bộ từ `G:\Other computers\Máy Mac của tôi\Desktop\TKBCherry`** (0 thay đổi mã nguồn):
+  - Fast-forward 15 commit `docs/PROJECT_HANDOFF.md` (`cd3ad1e..11ef8ae`) từ máy Mac (Quang Trung TKB 4 & 5, Củ Chi TKB 6, Tăng Bạt Hổ TKB 3, Phạm Văn Hai TKB 4); dọn `desktop.ini` do Google Drive sinh trong `.git/` để khôi phục `git fetch`/`push`.
+  - Chép 5 thư mục trường trong `scratch/` từ Mac sang Windows (240 file): `scratch/quangtrung/` (59), `scratch/af5ldw/` (79), `scratch/pvh/` (39), `scratch/qt5/` (24), `scratch/qt5b/` (39); chuyển bộ thử CP-SAT độc lập ở gốc Mac (`solve_cpsat.py`, `data/school.json`, `output/*` của kho `1aabcab4ec1` ngày 12/11) vào `scratch/cpsat_1aabcab4ec1_20261112/` để giữ sạch thư mục gốc theo `AGENTS.md`.
+  - Giữ nguyên `scratch/tbh5/` (53 file đã khớp SHA-1 hai máy) và giữ nguyên `scratch/annhontay2/` mới hơn trên máy Windows.
+- **Ghi bù nhật ký THCS An Nhơn Tây TKB số 2 (`sid 6c5p6ewusv2`, làm trên máy Windows trong `scratch/annhontay2/`)**:
+  - **15/11** (`change_tran_6a1.py` → `store_rules3.json` → `u1..u5` → `store_final3.json`, ĐÃ GHI kho ~08:34, sao lưu `backup_6c5p6ewusv2_20261115-083433_truoc-ghi.json`, `live_after3.json`, RB 0): `CN.Trân` (con nhỏ) nghỉ tiết 1 buổi sáng (T2–T4, T6–T7) + nghỉ sáng T5, mở dạy chiều T5; chốt khung cố định lớp `6A1` (chiều T2 4 tiết, T3–T5 3 tiết, T6 nghỉ). Kết quả `u5`: GV trường `(311 buổi, 1 lẻ, 20 trống 1, 0 trống 2)`, trung tâm `(7, 0, 0, 0)`, max 8 tiết/ngày, đổi 59 ô / 16 lớp.
+  - **18/11** (`change_tg.py` → `store_rules4.json` → `v1..v4` → `store_final4.json`, ĐÃ GHI kho ~13:04 qua `apply.py`, sao lưu `backup_6c5p6ewusv2_20261118-130440_truoc-ghi.json`, `live_after4.json`, RB 0): đổi lịch GV thỉnh giảng — chuyển `6A7|LSĐL` sang `LSĐL.An` (7A2–7A5, 7A8 + 6A7); `LSĐL.Thủy` (6A1, 6A5, 6A6) chỉ dạy chiều T2, T3, T4. Kết quả `v4` (OPTIMAL/LNS): GV trường `(312 buổi, 1 lẻ, 22 trống 1, 0 trống 2)`, trung tâm `(7, 0, 0, 0)`, max 8 tiết/ngày, đổi 12 ô / 3 lớp so với bản 15/11.
+
 ## 2026-11-18 THCS Quang Trung TKB số 5 — VA.Trường nghỉ hưu, chuyển lớp + gom lịch cô Chung — ĐÃ GHI vào kho
 
 - Yêu cầu: thầy Phạm Nhật Trường (VA.Trường) nghỉ hưu → Văn 6A2 cho VA.T Phương, Văn 7A3 cho VA.Trang, GDĐP 6A3/8A2/8A4
