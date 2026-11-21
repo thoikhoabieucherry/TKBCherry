@@ -394,6 +394,54 @@ fn is_superadmin_session(session: &Value) -> bool {
     session.get("userId").and_then(Value::as_str) == Some(SUPER_ID)
 }
 
+/// Super Admin can lock (`active: false`) or delete a school or one of its
+/// users. Login already refuses such accounts; this makes the refusal reach
+/// sessions and Agent credentials issued BEFORE the lock, which otherwise
+/// stayed usable for up to SESSION_TTL_SECS (Agent: 90 days).
+/// Only explicit markers count, so an empty or unreadable registry fails
+/// open instead of logging every school out. The built-in Super Admin is
+/// never locked out by registry data.
+fn session_account_locked(reg: &Value, session: &Value) -> bool {
+    if is_superadmin_session(session) {
+        return false;
+    }
+    let field = |name: &str| {
+        session
+            .get(name)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string()
+    };
+    let disabled = |entry: Option<&Value>| {
+        entry.and_then(|value| value.get("active")) == Some(&Value::Bool(false))
+    };
+    let tombstoned = |section: &str, id: &str| {
+        reg.get(section)
+            .and_then(Value::as_object)
+            .is_some_and(|items| items.keys().any(|key| key.trim().eq_ignore_ascii_case(id)))
+    };
+
+    let user_key = field("userId");
+    if !user_key.is_empty() {
+        match find_user(reg, &user_key) {
+            Some((_, user)) if disabled(Some(&user)) => return true,
+            Some(_) => {}
+            // A tombstone only counts while the login has not been recreated.
+            None if tombstoned("deletedUsers", &user_key) => return true,
+            None => {}
+        }
+    }
+
+    // Like login: a superadmin-role account is not bound to its school's lock.
+    let school_id = field("schoolId");
+    if school_id.is_empty() || field("role") == "superadmin" {
+        return false;
+    }
+    let school = reg.get("schools").and_then(|schools| schools.get(&school_id));
+    disabled(school) || (school.is_none() && tombstoned("deletedSchools", &school_id))
+}
+
 fn session_has_expired(session: &Value) -> bool {
     let Some(expires) = session.get("expiresAt").and_then(Value::as_u64) else {
         return true;
@@ -571,6 +619,10 @@ pub fn require_agent_credential(db: &Db, token: Option<&str>) -> Option<Value> {
         let _ = db.set(&key, "");
         return None;
     }
+    // Kept (not deleted) so unlocking the account restores the paired Agent.
+    if session_account_locked(&load_registry(db), &credential) {
+        return None;
+    }
     Some(credential)
 }
 
@@ -727,6 +779,16 @@ pub fn session_json(db: &Db, token: &str) -> Vec<u8> {
             }),
         );
     }
+    if session_account_locked(&load_registry(db), &session) {
+        return json_bytes(
+            401,
+            json!({
+                "ok": false,
+                "error": "account_locked",
+                "message": "Tài khoản hoặc trường đã bị khóa. Liên hệ quản trị."
+            }),
+        );
+    }
     json_bytes(200, json!({"ok": true, "session": session}))
 }
 
@@ -795,6 +857,9 @@ pub fn require_session(db: &Db, auth_token: Option<&str>) -> Option<Value> {
         return None;
     }
     if !session_is_active(db, token, &session) {
+        return None;
+    }
+    if session_account_locked(&load_registry(db), &session) {
         return None;
     }
     Some(session)
@@ -1593,5 +1658,120 @@ mod tests {
             db.get(&key).expect("read active token").as_deref(),
             Some("new-token")
         );
+    }
+
+    fn lock_test_registry(user_active: bool, school_active: bool) -> Value {
+        json!({
+            "users": {
+                "lockadmin": {
+                    "id": "lockadmin",
+                    "role": "school_admin",
+                    "schoolId": "sch-lock",
+                    "active": user_active
+                }
+            },
+            "schools": {
+                "sch-lock": {"id": "sch-lock", "active": school_active}
+            }
+        })
+    }
+
+    fn lock_test_user() -> Value {
+        json!({"role": "school_admin", "schoolId": "sch-lock", "displayName": "Lock School"})
+    }
+
+    #[test]
+    fn locking_a_school_ends_its_open_sessions_until_unlocked() {
+        let db = Db::new(":memory:".into()).expect("in-memory database");
+        save_registry(&db, &lock_test_registry(true, true));
+        let token = create_session(&db, "lockadmin", &lock_test_user()).expect("session");
+        assert!(require_session(&db, Some(&token)).is_some());
+
+        // Super Admin "Khoá" sets the school and its users inactive.
+        save_registry(&db, &lock_test_registry(false, false));
+        assert!(require_session(&db, Some(&token)).is_none());
+        let response = String::from_utf8(session_json(&db, &token)).expect("session response");
+        assert!(response.starts_with("HTTP/1.1 401"));
+        assert!(response.contains("account_locked"));
+
+        // Either flag alone is enough.
+        save_registry(&db, &lock_test_registry(true, false));
+        assert!(require_session(&db, Some(&token)).is_none());
+        save_registry(&db, &lock_test_registry(false, true));
+        assert!(require_session(&db, Some(&token)).is_none());
+
+        // Unlocking restores the same (unexpired) session.
+        save_registry(&db, &lock_test_registry(true, true));
+        assert!(require_session(&db, Some(&token)).is_some());
+        assert!(String::from_utf8(session_json(&db, &token))
+            .expect("session response")
+            .starts_with("HTTP/1.1 200"));
+    }
+
+    #[test]
+    fn deleted_accounts_lose_their_sessions_but_recreated_logins_do_not() {
+        let db = Db::new(":memory:".into()).expect("in-memory database");
+        save_registry(&db, &lock_test_registry(true, true));
+        let token = create_session(&db, "lockadmin", &lock_test_user()).expect("session");
+
+        save_registry(
+            &db,
+            &json!({"users": {}, "schools": {}, "deletedUsers": {"LOCKADMIN": "2026-11-21"}}),
+        );
+        assert!(require_session(&db, Some(&token)).is_none());
+
+        save_registry(
+            &db,
+            &json!({"users": {}, "schools": {}, "deletedSchools": {"sch-lock": "2026-11-21"}}),
+        );
+        assert!(require_session(&db, Some(&token)).is_none());
+
+        let mut recreated = lock_test_registry(true, true);
+        recreated["deletedUsers"] = json!({"lockadmin": "2026-11-21"});
+        recreated["deletedSchools"] = json!({"sch-lock": "2026-11-21"});
+        save_registry(&db, &recreated);
+        assert!(require_session(&db, Some(&token)).is_some());
+    }
+
+    #[test]
+    fn missing_registry_does_not_log_everyone_out() {
+        let db = Db::new(":memory:".into()).expect("in-memory database");
+        let token = create_session(&db, "lockadmin", &lock_test_user()).expect("session");
+        assert!(require_session(&db, Some(&token)).is_some());
+        save_registry(&db, &json!({}));
+        assert!(require_session(&db, Some(&token)).is_some());
+    }
+
+    #[test]
+    fn super_admin_session_ignores_registry_locks() {
+        let db = Db::new(":memory:".into()).expect("in-memory database");
+        save_registry(
+            &db,
+            &json!({
+                "users": {SUPER_ID: {"id": SUPER_ID, "role": "superadmin", "active": false}},
+                "deletedUsers": {SUPER_ID: "2026-11-21"}
+            }),
+        );
+        let token = create_session(&db, SUPER_ID, &json!({"role": "superadmin"})).expect("session");
+        assert!(require_session(&db, Some(&token)).is_some());
+    }
+
+    #[test]
+    fn locking_a_school_suspends_its_agent_credential() {
+        let db = Db::new(":memory:".into()).expect("in-memory database");
+        save_registry(&db, &lock_test_registry(true, true));
+        let session = json!({
+            "userId": "lockadmin",
+            "schoolId": "sch-lock",
+            "role": "school_admin"
+        });
+        let (agent, _) = create_agent_credential(&db, &session).expect("agent credential");
+        assert!(require_agent_credential(&db, Some(&agent)).is_some());
+
+        save_registry(&db, &lock_test_registry(true, false));
+        assert!(require_agent_credential(&db, Some(&agent)).is_none());
+
+        save_registry(&db, &lock_test_registry(true, true));
+        assert!(require_agent_credential(&db, Some(&agent)).is_some());
     }
 }

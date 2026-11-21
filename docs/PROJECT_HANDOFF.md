@@ -32,9 +32,20 @@
   - Kiểm sau khi áp: `https://tkbcherry.com/` 200, `/api/health` 200.
 - **Lệnh hữu ích**: `fail2ban-client status sshd`; gỡ cấm nhầm: `fail2ban-client set sshd unbanip <ip>` (vào qua console nhà
   cung cấp VPS nếu chính IP mình bị cấm); tắt hẳn: `systemctl disable --now fail2ban`.
+- **Vá phiên của tài khoản bị khoá (cùng ngày)**: `auth::session_account_locked(reg, session)` — từ chối khi registry ghi
+  RÕ user `active:false`, trường `active:false`, hoặc user/trường nằm trong `deletedUsers`/`deletedSchools` mà chưa được tạo
+  lại; Super Admin `suadmin` không bao giờ bị khoá; tài khoản role `superadmin` khác bỏ qua cờ khoá của trường (giống login).
+  Registry rỗng/hỏng ⇒ không chặn ai (fail-open, tránh đăng xuất cả hệ thống). Gọi ở `require_session` (mọi API), 
+  `session_json` (401 `account_locked`, "Tài khoản hoặc trường đã bị khóa. Liên hệ quản trị.") và `require_agent_credential`
+  (khoá Agent 90 ngày; không xoá credential nên mở khoá là dùng lại). `web/shared/runtime.js` hiện thông báo khoá ở trang đăng
+  nhập như `session_replaced`. Mỗi lần kiểm phiên đọc thêm một lần `auth_registry`. Test: 5 test mới trong `auth::tests`
+  (`locking_a_school_ends_its_open_sessions_until_unlocked`, `deleted_accounts_lose_their_sessions_but_recreated_logins_do_not`,
+  `missing_registry_does_not_log_everyone_out`, `super_admin_session_ignores_registry_locks`,
+  `locking_a_school_suspends_its_agent_credential`); `cargo test --locked` 374/374 (chạy trong `/tmp` trên VPS);
+  `e2e_tests/auth_session_persistence_node` 9/9. Trước deploy: `auth.rs`/`runtime.js` trên VPS = HEAD; `main.rs` trên VPS
+  khác HEAD (lệch sẵn, không thuộc commit nào trong 25 commit gần nhất) — bản vá không đổi API công khai của `auth`.
 - **Còn mở**:
-  1. `auth::require_session` (`rust_api/src/auth.rs`) không kiểm `user.active` / `school.active` → phiên đang mở của tài khoản
-     bị khoá còn dùng được tới 24 h (`SESSION_TTL_SECS`); `blockedIps` chỉ chặn login/register.
+  1. `blockedIps` của app vẫn chỉ chặn login/register (chặn toàn site thì dùng `block-ip-nginx.py`).
   2. SSH vẫn cho root đăng nhập bằng mật khẩu. Chuyển sang khoá SSH + `PasswordAuthentication no` cần sửa `vps_credentials.py`
      và mọi script paramiko trước — làm riêng.
   3. Chưa có giới hạn tốc độ nginx (`limit_req`) cho `/api/auth/*`; khoá đăng nhập sai hiện là bộ đếm trong RAM của Rust.
