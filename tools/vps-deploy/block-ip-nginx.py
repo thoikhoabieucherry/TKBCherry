@@ -49,15 +49,20 @@ def main(argv: list[str]) -> int:
         return 2
 
     import paramiko  # noqa: E402
-    from vps_credentials import missing_credential_message, resolve_vps_connection  # noqa: E402
+    from vps_credentials import (  # noqa: E402
+        connect_vps,
+        missing_credential_message,
+        resolve_vps_connection,
+        vps_credentials_ready,
+    )
 
-    host, user, password = resolve_vps_connection()
-    if not password:
+    host, user, _password = resolve_vps_connection()
+    if not vps_credentials_ready():
         print(missing_credential_message())
         return 2
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(host, username=user, password=password, timeout=20)
+    connect_vps(client, host=host, user=user, timeout=20)
     try:
         _, current = run(client, f"cat {CONF} 2>/dev/null || true")
         print("current blocklist:\n" + (current.strip() or "(empty)"))

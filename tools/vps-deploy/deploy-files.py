@@ -51,6 +51,11 @@ def local_path_for(rel: str) -> Path:
 
 
 def main() -> int:
+    # The usage text is Vietnamese; a piped Windows console (cp1252) would raise
+    # UnicodeEncodeError and exit 1 instead of the intended usage exit 2.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     if len(sys.argv) < 3:
         print(__doc__)
         return 2
@@ -97,18 +102,19 @@ def main() -> int:
     # fast without needing paramiko installed in every checkout.
     import paramiko  # noqa: E402
     from vps_credentials import (  # noqa: E402
+        connect_vps,
         missing_credential_message,
         resolve_vps_connection,
+        vps_credentials_ready,
     )
 
-    host, user, password = resolve_vps_connection()
-    if not password:
+    host, user, _password = resolve_vps_connection()
+    if not vps_credentials_ready():
         print(missing_credential_message())
         return 1
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(host, username=user, password=password, timeout=30, banner_timeout=30,
-                   auth_timeout=30, look_for_keys=False, allow_agent=False)
+    connect_vps(client, host=host, user=user, timeout=30)
 
     def run(cmd: str, timeout: int = 180) -> tuple[int, str]:
         _, out, _err = client.exec_command(cmd, timeout=timeout)

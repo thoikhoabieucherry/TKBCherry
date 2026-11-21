@@ -91,16 +91,20 @@ def main() -> int:
     remove = "--remove" in sys.argv
 
     import paramiko  # noqa: E402
-    from vps_credentials import missing_credential_message, resolve_vps_connection  # noqa: E402
+    from vps_credentials import (  # noqa: E402
+        connect_vps,
+        missing_credential_message,
+        resolve_vps_connection,
+        vps_credentials_ready,
+    )
 
-    host, user, password = resolve_vps_connection()
-    if not password:
+    host, user, _password = resolve_vps_connection()
+    if not vps_credentials_ready():
         print(missing_credential_message())
         return 1
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(host, username=user, password=password, timeout=30, banner_timeout=30,
-                   auth_timeout=30, look_for_keys=False, allow_agent=False)
+    connect_vps(client, host=host, user=user, timeout=30)
 
     def run(cmd: str, timeout: int = 60) -> tuple[int, str]:
         _, out, err = client.exec_command(cmd, timeout=timeout)

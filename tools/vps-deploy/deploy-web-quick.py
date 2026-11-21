@@ -18,7 +18,13 @@ import paramiko
 ROOT = Path(__file__).resolve().parents[2]  # goc repo (file nay nam o tools/vps-deploy/)
 TOOLS_DIR = ROOT / "tools" / "vps-deploy"
 sys.path.insert(0, str(TOOLS_DIR))
-from vps_credentials import resolve_vps_connection
+from vps_credentials import (
+    CredentialError,
+    connect_vps,
+    missing_credential_message,
+    resolve_vps_connection,
+    vps_credentials_ready,
+)
 
 
 def create_tarball() -> Path:
@@ -51,9 +57,12 @@ def create_tarball() -> Path:
 
 
 def main():
-    host, user, password = resolve_vps_connection()
+    host, user, _password = resolve_vps_connection()
+    if not vps_credentials_ready():
+        print(missing_credential_message(), file=sys.stderr)
+        raise SystemExit(1)
     print(f"Ket noi VPS {host}...")
-    
+
     tarball = create_tarball()
     print(f"Goi bundle {tarball.name} ({tarball.stat().st_size // 1024} KB)...")
     
@@ -64,17 +73,11 @@ def main():
     for attempt in range(1, 4):
         try:
             print(f"Thu ket noi (lan {attempt})...")
-            client.connect(
-                host,
-                username=user,
-                password=password,
-                timeout=30,
-                banner_timeout=30,
-                auth_timeout=30,
-                look_for_keys=False,
-                allow_agent=False
-            )
+            connect_vps(client, host=host, user=user, timeout=30)
             break
+        except (CredentialError, paramiko.AuthenticationException):
+            # Sai khoa/mat khau: thu lai chi them lan dang nhap hong (fail2ban dem).
+            raise
         except Exception as e:
             if attempt == 3:
                 raise

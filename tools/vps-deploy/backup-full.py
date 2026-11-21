@@ -15,7 +15,7 @@ from pathlib import Path
 
 import paramiko
 
-from vps_credentials import resolve_vps_connection
+from vps_credentials import connect_vps, resolve_vps_connection, vps_credentials_ready
 
 
 def run_remote(client: paramiko.SSHClient, command: str, *, timeout: int = 7200) -> tuple[int, str, str]:
@@ -40,10 +40,11 @@ def main() -> int:
             return 2
 
     host, user, password = resolve_vps_connection()
-    password = password or getpass.getpass("VPS password: ")
-    if not password:
-        print("VPS password is required.", file=sys.stderr)
-        return 2
+    if not vps_credentials_ready():
+        password = getpass.getpass("VPS password: ")
+        if not password:
+            print("VPS SSH key or password is required.", file=sys.stderr)
+            return 2
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     nonce = secrets.token_hex(6)
@@ -58,13 +59,7 @@ def main() -> int:
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     try:
         print(f"Creating live VPS snapshot from {args.remote_dir} ...", flush=True)
-        client.connect(
-            host,
-            username=user,
-            password=password,
-            timeout=30,
-            banner_timeout=30,
-        )
+        connect_vps(client, host=host, user=user, password=password)
         command = "; ".join(
             [
                 "set -e",

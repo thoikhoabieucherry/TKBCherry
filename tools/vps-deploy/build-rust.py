@@ -18,19 +18,23 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import paramiko  # noqa: E402
-from vps_credentials import missing_credential_message, resolve_vps_connection  # noqa: E402
+from vps_credentials import (  # noqa: E402
+    connect_vps,
+    missing_credential_message,
+    resolve_vps_connection,
+    vps_credentials_ready,
+)
 
 
 def main() -> int:
     apply = "--apply" in sys.argv
-    host, user, password = resolve_vps_connection()
-    if not password:
+    host, user, _password = resolve_vps_connection()
+    if not vps_credentials_ready():
         print(missing_credential_message())
         return 1
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(host, username=user, password=password, timeout=30, banner_timeout=30,
-                   auth_timeout=30, look_for_keys=False, allow_agent=False)
+    connect_vps(client, host=host, user=user, timeout=30)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     log = f"/tmp/tkb-rust-build-{stamp}.log"
     build = (

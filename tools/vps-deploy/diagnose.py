@@ -3,17 +3,22 @@ import sys
 
 import paramiko
 
-from vps_credentials import missing_credential_message, resolve_vps_connection
+from vps_credentials import (
+    connect_vps,
+    missing_credential_message,
+    resolve_vps_connection,
+    vps_credentials_ready,
+)
 
-HOST, USER, PASSWORD = resolve_vps_connection()
-if not PASSWORD:
+HOST, USER, _PASSWORD = resolve_vps_connection()
+if not vps_credentials_ready():
     print(missing_credential_message(), file=sys.stderr)
     raise SystemExit(1)
 
 c = paramiko.SSHClient()
 c.load_system_host_keys()
 c.set_missing_host_key_policy(paramiko.RejectPolicy())
-c.connect(HOST, username=USER, password=PASSWORD, timeout=30)
+connect_vps(c, host=HOST, user=USER, timeout=30)
 cmds = [
     "curl -fsS http://127.0.0.1:1010/api/health",
     "curl -fsS http://127.0.0.1:1010/api/solver-state",

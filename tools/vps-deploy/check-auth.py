@@ -9,7 +9,12 @@ import urllib.error
 
 import paramiko
 
-from vps_credentials import missing_credential_message, resolve_vps_connection
+from vps_credentials import (
+    connect_vps,
+    missing_credential_message,
+    resolve_vps_connection,
+    vps_credentials_ready,
+)
 
 
 def ssh_run(client, cmd: str) -> str:
@@ -22,14 +27,14 @@ def ssh_run(client, cmd: str) -> str:
 
 
 def main() -> int:
-    host, user, password = resolve_vps_connection()
-    if not password:
+    host, user, _password = resolve_vps_connection()
+    if not vps_credentials_ready():
         print(missing_credential_message(), file=sys.stderr)
         return 1
 
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(host, username=user, password=password, timeout=30)
+    connect_vps(client, host=host, user=user, timeout=30)
 
     cmds = [
         "find /opt/cherry-scheduler -name '*.db' -type f 2>/dev/null",

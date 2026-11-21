@@ -20,7 +20,12 @@ import paramiko
 TOOLS_DIR = Path(__file__).resolve().parent
 if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
-from vps_credentials import missing_credential_message, resolve_vps_connection
+from vps_credentials import (
+    connect_vps,
+    missing_credential_message,
+    resolve_vps_connection,
+    vps_credentials_ready,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_PRODUCTION = "production"
@@ -202,7 +207,7 @@ def make_tarball(profile: str = PACKAGE_PRODUCTION) -> Path:
 
 def run_ssh(host: str, user: str, password: str, command: str, timeout: int = 1800) -> tuple[int, str, str]:
     client = new_ssh_client()
-    client.connect(host, username=user, password=password, timeout=30, banner_timeout=30)
+    connect_vps(client, host=host, user=user, password=password)
     try:
         stdin, stdout, stderr = client.exec_command(command, timeout=timeout, get_pty=True)
         del stdin
@@ -224,7 +229,7 @@ def upload_files(
     remote_script: str,
 ) -> None:
     client = new_ssh_client()
-    client.connect(host, username=user, password=password, timeout=30, banner_timeout=30)
+    connect_vps(client, host=host, user=user, password=password)
     try:
         sftp = client.open_sftp()
         sftp.put(str(tarball), remote_archive)
@@ -243,7 +248,7 @@ def main() -> int:
     parser.add_argument("--password", default=saved_password)
     parser.add_argument("--domain", default="tkbcherry.com")
     args = parser.parse_args()
-    if not args.password:
+    if not args.password and not vps_credentials_ready():
         print(missing_credential_message(), file=sys.stderr)
         return 1
 

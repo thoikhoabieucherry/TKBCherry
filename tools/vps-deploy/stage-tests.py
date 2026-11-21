@@ -13,7 +13,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from deploy import PACKAGE_STAGING, make_tarball, new_ssh_client, run_ssh  # noqa: E402
-from vps_credentials import missing_credential_message, resolve_vps_connection  # noqa: E402
+from vps_credentials import (  # noqa: E402
+    connect_vps,
+    missing_credential_message,
+    resolve_vps_connection,
+    vps_credentials_ready,
+)
 
 
 def test_data_directory() -> Path:
@@ -23,7 +28,7 @@ def test_data_directory() -> Path:
 
 def main() -> int:
     host, user, password = resolve_vps_connection()
-    if not password:
+    if not vps_credentials_ready():
         print(missing_credential_message(), file=sys.stderr)
         return 1
 
@@ -46,7 +51,7 @@ def main() -> int:
     remote_dir = f"/tmp/tkb-stage-{nonce}"
     client = new_ssh_client()
     try:
-        client.connect(host, username=user, password=password, timeout=30, banner_timeout=30)
+        connect_vps(client, host=host, user=user, password=password)
         sftp = client.open_sftp()
         try:
             sftp.put(str(archive), remote_archive)
