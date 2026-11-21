@@ -9,6 +9,42 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-21 BẢO MẬT — máy quét lỗ hổng 143.246.203.109 + SSH bị dò mật khẩu: chặn IP ở nginx, cài fail2ban
+
+- **Sự việc**: chủ dự án thấy tài khoản lạ ở Super Admin (`marcusjreed`, trường "Reedline Analytics" `schbfc44ad803`, IP
+  143.246.203.109, SĐT/email giả). Đọc log VPS (chỉ đọc): IP này là **máy quét tự động** (HeadlessChrome + UA giả), ~850 request
+  ngày 09/11, 16/11, 18/11, 21/11, thử 152 đường dẫn (`/.env`, `/.git/config`, `/.ssh/id_rsa`, `/.aws/credentials`,
+  `/terraform.tfstate`, swagger/openapi, `/actuator`, `/api/admin/*`, đường ngẫu nhiên `__xxxx` dò route bắt-tất).
+  **Không lọt gì**: mọi đường nhạy cảm 404 (cả 14 ngày log, mọi IP); `/api/admin/solver-usage|solver-infrastructure` và
+  `/api/auth/hash-password` 401/403; `/api/auth/registry` chỉ trả phần trường của họ (~1 KB); kho `school_92aeb8fb981` 236 byte.
+  Đăng ký 16/11 23:50 UTC (trường đó bị xoá 17/11 → `ip_registered` giải phóng IP) rồi đăng ký lại 18/11 10:58 UTC.
+  Chủ dự án đã **Khoá** trường 21/11 15:17 UTC → IP vào `blockedIps`.
+- **SSH**: 16.836 lần đăng nhập sai/24 h từ 110 IP (14.539 lần `root`); `permitrootlogin yes`, `passwordauthentication yes`,
+  0 `authorized_keys`, chưa có fail2ban. Mọi lần đăng nhập thành công từ 18/10 (auth.log) đều từ IP nhà mạng VN khớp phiên làm
+  việc — không thấy xâm nhập. Không có user nào khác có shell / uid 0.
+- **Đã áp (chủ dự án duyệt)**:
+  - nginx: `/etc/nginx/conf.d/tkb-blocklist.conf` = `deny 143.246.203.109;` (nginx.conf include `conf.d/*.conf` trong khối
+    http → 403 mọi server block). Công cụ mới `tools/vps-deploy/block-ip-nginx.py <ip> [--apply|--remove]` (mặc định chỉ xem;
+    `nginx -t` hỏng thì khôi phục file cũ, không reload; reload không restart `tkb-app`).
+  - fail2ban 1.0.2-3ubuntu0.1 (Ubuntu 24.04), jail `/etc/fail2ban/jail.d/tkb-sshd.local`: `backend=systemd`, `maxretry=5`,
+    `findtime=10m`, `bantime=1h` tăng gấp đôi tới 1 tuần; chặn qua nftables (`inet f2b-table`). Phút đầu đã cấm 3 IP.
+    Đăng nhập đúng mật khẩu (script deploy) không bị tính. Thêm cùng cấu hình vào `tools/vps-deploy/install-server.sh`.
+  - Kiểm sau khi áp: `https://tkbcherry.com/` 200, `/api/health` 200.
+- **Lệnh hữu ích**: `fail2ban-client status sshd`; gỡ cấm nhầm: `fail2ban-client set sshd unbanip <ip>` (vào qua console nhà
+  cung cấp VPS nếu chính IP mình bị cấm); tắt hẳn: `systemctl disable --now fail2ban`.
+- **Còn mở**:
+  1. `auth::require_session` (`rust_api/src/auth.rs`) không kiểm `user.active` / `school.active` → phiên đang mở của tài khoản
+     bị khoá còn dùng được tới 24 h (`SESSION_TTL_SECS`); `blockedIps` chỉ chặn login/register.
+  2. SSH vẫn cho root đăng nhập bằng mật khẩu. Chuyển sang khoá SSH + `PasswordAuthentication no` cần sửa `vps_credentials.py`
+     và mọi script paramiko trước — làm riêng.
+  3. Chưa có giới hạn tốc độ nginx (`limit_req`) cho `/api/auth/*`; khoá đăng nhập sai hiện là bộ đếm trong RAM của Rust.
+- Lưu ý: **Khoá** chứ đừng **Xoá** trường giả — xoá gỡ luôn `blockedIps` của trường và cho IP đăng ký lại.
+- `python run_tests.py` (21/11, cây chính): 6 test planner báo [MOI HONG] (`planner_constraint_audit_stale_class`,
+  `planner_fixed_chao_co_survives_load`, `planner_ghep_stale_pin`, `planner_lesson_block_impossible_min`,
+  `planner_lesson_block_standard_periods`, `planner_teacher_code_nfc`) — **không do thay đổi này**: bản làm việc
+  `web/pages/phanmon.js` của cây chính là CRLF (`git ls-files --eol`: `i/lf w/crlf`, mtime 30/10) trong khi test tìm `"\n}\n"`;
+  chạy trên worktree sạch của HEAD cả 6 test đều qua. `py-infra/test_vps_credentials` là mục mới (chưa có trong mốc), FAIL.
+
 ## 2026-11-20 ĐỒNG BỘ XẾP TKB TRƯỜNG TỪ MÁY MAC VỀ WINDOWS + GHI BÙ NHẬT KÝ AN NHƠN TÂY TKB 2 (15/11 & 18/11)
 
 - **Đồng bộ từ `G:\Other computers\Máy Mac của tôi\Desktop\TKBCherry`** (0 thay đổi mã nguồn):

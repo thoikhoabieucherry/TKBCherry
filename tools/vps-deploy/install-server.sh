@@ -202,6 +202,26 @@ ufw allow OpenSSH || true
 ufw allow 'Nginx Full' || true
 ufw --force enable || true
 
+# SSH root still logs in with a password (deploy tools use it), and the server
+# sees ~17k failed root logins/day. fail2ban bans an IP after 5 failures in
+# 10 min (1 h, doubling up to 1 week). Correct-password logins never count.
+apt-get install -y fail2ban || true
+cat > /etc/fail2ban/jail.d/tkb-sshd.local <<'EOF'
+[sshd]
+enabled = true
+backend = systemd
+port = ssh
+maxretry = 5
+findtime = 10m
+bantime = 1h
+bantime.increment = true
+bantime.factor = 2
+bantime.maxtime = 1w
+ignoreip = 127.0.0.1/8 ::1
+EOF
+systemctl enable fail2ban || true
+systemctl restart fail2ban || true
+
 systemctl daemon-reload
 systemctl enable tkb-mail tkb-app nginx
 systemctl restart tkb-mail
