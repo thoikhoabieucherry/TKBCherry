@@ -21,8 +21,10 @@ TOOLS_DIR = Path(__file__).resolve().parent
 if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 from vps_credentials import (
+    CredentialError,
     connect_vps,
     missing_credential_message,
+    read_public_key,
     resolve_vps_connection,
     vps_credentials_ready,
 )
@@ -272,6 +274,13 @@ def main() -> int:
         remote_script,
     )
 
+    try:
+        # install-server.sh authorises this key and then turns SSH passwords off.
+        deploy_pubkey = read_public_key()
+    except CredentialError:
+        deploy_pubkey = ""
+        print("No deploy SSH key (vps_credentials.py ssh-keygen); VPS keeps password SSH.",
+              file=sys.stderr)
     gmail_user = os.environ.get("GMAIL_USER", "")
     gmail_pass = os.environ.get("GMAIL_APP_PASSWORD", "")
     from_name = os.environ.get("FROM_NAME", "Cherry Scheduler")
@@ -287,6 +296,7 @@ def main() -> int:
         f"tar -xzf {shlex.quote(remote_archive)} -C {shlex.quote(remote_upload)}",
         f"export TKB_DEPLOY_UPLOAD_DIR={shlex.quote(remote_upload)}",
         f"export TKB_DOMAIN={shlex.quote(args.domain)}",
+        f"export TKB_DEPLOY_SSH_PUBKEY={shlex.quote(deploy_pubkey)}",
         f"export GMAIL_USER={shlex.quote(gmail_user)}",
         f"export GMAIL_APP_PASSWORD={shlex.quote(gmail_pass)}",
         f"export FROM_NAME={shlex.quote(from_name)}",

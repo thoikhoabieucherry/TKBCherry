@@ -16,7 +16,7 @@ usage:
 Safety: the current config is copied to /root/tkb-backups/nginx-public-seo-<stamp>/
 first; if `nginx -t` fails the backup is restored and nginx is NOT reloaded.
 Idempotent (block delimited by TKB_PUBLIC_SEO_BEGIN/END markers).
-Password: TKB_VPS_PASSWORD or the DPAPI store (see vps_credentials.py).
+Login: SSH key via vps_credentials.connect_vps (password only as fallback).
 
 Files: /opt/cherry-scheduler is mode 0700 (it holds the SQLite DB), so the
 nginx worker (www-data) cannot read anything aliased inside it (403). `--apply`

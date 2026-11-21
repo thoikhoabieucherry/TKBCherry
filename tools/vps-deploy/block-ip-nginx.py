@@ -14,7 +14,7 @@ usage:
 Safety: only that one file is written; the previous copy is kept as
 `.bak`; if `nginx -t` fails the old file is restored and nginx is NOT
 reloaded. A reload does not restart tkb-app or interrupt solver jobs.
-Password: TKB_VPS_PASSWORD or the DPAPI store (see vps_credentials.py).
+Login: SSH key via vps_credentials.connect_vps (password only as fallback).
 """
 from __future__ import annotations
 

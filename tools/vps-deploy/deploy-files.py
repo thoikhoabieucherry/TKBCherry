@@ -12,7 +12,7 @@ PowerShell (một dòng, KHÔNG dùng \\ xuống dòng kiểu bash):
 deploy: for each file, `cp -p` the remote copy into /root/tkb-backups/<backup-name>/,
 upload to <file>.uploading, compare sha256 with the local file, `mv` into place;
 then `systemctl restart tkb-app` and print is-active. Never touches
-tkb_store.db / -wal / -shm. Password: TKB_VPS_PASSWORD or the DPAPI store.
+tkb_store.db / -wal / -shm. Login: SSH key via vps_credentials.connect_vps.
 """
 from __future__ import annotations
 
