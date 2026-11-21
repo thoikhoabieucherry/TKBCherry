@@ -52,7 +52,12 @@
   không chạm máy chủ, quét tĩnh không script nào `.connect(..., password=)`), `tests/test_ssh_key_auth.py` (10 test: chạy lệnh
   sshd sinh ra với `sshd`/`systemctl` giả — mọi nhánh lỗi xoá drop-in, không reload cấu hình chưa kiểm; `install-key` không
   trùng; `--pubkey` chỉ nhận 1 dòng khoá trơn). Lệnh: `python -m pytest tests/test_vps_credentials.py
-  tests/test_ssh_key_auth.py tests/test_vps_deploy_packaging.py -q`.
+  tests/test_ssh_key_auth.py tests/test_vps_deploy_packaging.py -q`. `python run_tests.py` (worktree sạch nhánh
+  `claude/ssh-key-auth`): 146/168, "Khong co test nao moi hong so voi moc chuan"; 22 FAIL đều có sẵn hoặc là mục mới không
+  liên quan (js-guard 3, js-e2e 17, `test_cloud_run_deploy_assets` kiểm `deploy.ps1`) — diff này không đụng `web/`,
+  `e2e_tests/`, `deploy.ps1`. `test_ssh_key_auth` FAIL **một lần** trong lượt đầy đủ đó nhưng không tái hiện (5 lần pytest +
+  2 lần `run_tests.py --group py-infra` đều qua) — nghi Git Bash chậm/lỗi fork khi máy tải nặng; gặp lại thì chạy
+  `run_tests.py --group py-infra -v` để có chi tiết.
 - **Còn mở**: (1) host key VPS chưa được ghim — đa số script dùng `AutoAddPolicy` (nay khoá công khai không lộ credential qua
   MITM như mật khẩu, nhưng nên ghim vân tay host key vào `vps-config.json`); (2) `limit_req` nginx cho `/api/auth/*` (như cũ).
 
