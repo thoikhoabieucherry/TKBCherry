@@ -44,6 +44,12 @@
   `locking_a_school_suspends_its_agent_credential`); `cargo test --locked` 374/374 (chạy trong `/tmp` trên VPS);
   `e2e_tests/auth_session_persistence_node` 9/9. Trước deploy: `auth.rs`/`runtime.js` trên VPS = HEAD; `main.rs` trên VPS
   khác HEAD (lệch sẵn, không thuộc commit nào trong 25 commit gần nhất) — bản vá không đổi API công khai của `auth`.
+  **ĐÃ DEPLOY 21/11 ~15:53 UTC**: `deploy-files.py deploy session-lock-20261121 --no-restart rust_api/src/auth.rs
+  web/shared/runtime.js` + `build-rust.py --apply` (build release 2m32s, đổi binary khi solver rảnh; binary cũ ở
+  `/root/tkb-backups/rust-bin-20261121-225059/`). Sau deploy: `tkb-app` active, journal không cảnh báo, 17/17 request `/api/*`
+  trả 200 (không có 401/403 bất thường), token giả → 401, trang chủ 200. Chưa thử đầu-cuối bằng phiên thật của trường bị khoá
+  (không có token của họ) — phần đó do unit test phủ. Rollback: `deploy-files.py rollback session-lock-20261121
+  rust_api/src/auth.rs web/shared/runtime.js` rồi `build-rust.py --apply`.
 - **Còn mở**:
   1. `blockedIps` của app vẫn chỉ chặn login/register (chặn toàn site thì dùng `block-ip-nginx.py`).
   2. SSH vẫn cho root đăng nhập bằng mật khẩu. Chuyển sang khoá SSH + `PasswordAuthentication no` cần sửa `vps_credentials.py`
