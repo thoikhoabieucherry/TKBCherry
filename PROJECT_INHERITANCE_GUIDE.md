@@ -114,9 +114,17 @@ Trên máy phát triển (Windows PowerShell / CMD):
 cd C:\Users\Love\Documents\Codex\TKBCherry
 python tools/vps-deploy/update-deploy.py
 ```
+*Đăng nhập VPS (từ 21/11/2026):* SSH root **chỉ nhận khoá**, mật khẩu bị từ chối. Mọi script trong
+`tools/vps-deploy/` đăng nhập qua `vps_credentials.connect_vps()` bằng khoá ed25519 ở
+`%LOCALAPPDATA%\TKBCherry\secrets\vps-ssh-ed25519` (passphrase lưu DPAPI). Máy mới:
+`python tools/vps-deploy/vps_credentials.py ssh-keygen`, rồi từ máy đã có khoá chạy
+`python tools/vps-deploy/ssh-key-auth.py install-key --apply --pubkey <file.pub>`. Bị khoá ngoài: console web
+của nhà cung cấp VPS → `rm /etc/ssh/sshd_config.d/00-tkb-keys-only.conf && systemctl reload ssh`
+(chi tiết `docs/PROJECT_HANDOFF.md` mục 21/11 tối).
+
 *Script sẽ tự động:*
 1. Nén các tệp mã nguồn mới (`web/`, `rust_api/`, `solver_runtime/`, `nginx/`).
-2. Tải lên VPS qua SSH/SFTP an toàn.
+2. Tải lên VPS qua SSH/SFTP an toàn (đăng nhập bằng khoá).
 3. Backup trạng thái máy chủ (`STATE_BACKUP`, `RELEASE_BACKUP`).
 4. Build bản tối ưu Rust (`cargo build --release`).
 5. Drain các tác vụ solver đang chạy an toàn và reload Nginx / Service.
