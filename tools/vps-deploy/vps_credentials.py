@@ -459,6 +459,15 @@ def main() -> int:
         return 0
     if args.action == "ssh-keygen":
         key = ssh_key_path()
+        if os.name != "nt":
+            print(
+                "ssh-keygen here stores the passphrase with Windows DPAPI. On macOS/Linux run "
+                "`ssh-keygen -t ed25519 -f ~/.ssh/tkbcherry_vps` and set TKB_VPS_KEY_FILE "
+                "(+ TKB_VPS_KEY_PASSPHRASE, e.g. from the keychain); authorise its .pub from the "
+                "Windows machine with `ssh-key-auth.py install-key --apply --pubkey <file.pub>`.",
+                file=sys.stderr,
+            )
+            return 2
         passphrase = secrets.token_urlsafe(32)
         try:
             public_line = generate_ssh_key(key, passphrase)

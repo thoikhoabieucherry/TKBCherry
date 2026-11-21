@@ -4,6 +4,7 @@
 usage (no flag = print the remote commands only, no connection):
   python tools/vps-deploy/ssh-key-auth.py audit                      # read-only: sshd, keys, fail2ban
   python tools/vps-deploy/ssh-key-auth.py install-key [--apply]      # append the .pub, test a key login
+  python tools/vps-deploy/ssh-key-auth.py install-key --apply --pubkey other.pub  # authorise another machine
   python tools/vps-deploy/ssh-key-auth.py disable-password [--apply] # keys only + verify + auto-rollback
   python tools/vps-deploy/ssh-key-auth.py enable-password [--apply]  # undo disable-password
 
@@ -54,6 +55,40 @@ AUDIT_COMMANDS = (
     ("authorized_keys", "ls -la /root/.ssh 2>&1; ssh-keygen -lf /root/.ssh/authorized_keys 2>&1 || true"),
     ("fail2ban", "systemctl is-active fail2ban; fail2ban-client status sshd 2>&1 | head -8"),
 )
+
+
+PUBKEY_TYPES = (
+    "ssh-ed25519",
+    "sk-ssh-ed25519@openssh.com",
+    "ecdsa-sha2-nistp256",
+    "ecdsa-sha2-nistp384",
+    "ecdsa-sha2-nistp521",
+    "ssh-rsa",
+)
+
+
+def parse_public_key(text: str) -> str:
+    """One plain ``<type> <base64> [comment]`` line; no authorized_keys options."""
+    import base64
+    import binascii
+    import re
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(lines) != 1:
+        raise ValueError("expected exactly one public key line")
+    parts = lines[0].split()
+    if len(parts) < 2 or parts[0] not in PUBKEY_TYPES:
+        raise ValueError(f"not a plain OpenSSH public key (type must be one of {', '.join(PUBKEY_TYPES)})")
+    try:
+        blob = base64.b64decode(parts[1], validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("public key body is not base64") from exc
+    if parts[0].encode() not in blob[:64]:
+        raise ValueError("public key body does not match its type")
+    comment = " ".join(parts[2:])
+    if not re.fullmatch(r"[A-Za-z0-9@._+:=-]*( [A-Za-z0-9@._+:=-]+)*", comment):
+        raise ValueError("public key comment has unexpected characters")
+    return " ".join(parts[:2] + ([comment] if comment else []))
 
 
 def install_key_command(public_line: str) -> str:
@@ -154,11 +189,24 @@ def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("-h", "--help"):
         print(__doc__)
         return 0 if argv else 2
-    action, flags = argv[0], argv[1:]
-    if action not in actions or any(flag != "--apply" for flag in flags):
+    action, rest = argv[0], argv[1:]
+    apply = False
+    extra_pubkey: Path | None = None
+    index = 0
+    while index < len(rest):
+        flag = rest[index]
+        if flag == "--apply":
+            apply = True
+        elif flag == "--pubkey" and action == "install-key" and index + 1 < len(rest):
+            extra_pubkey = Path(rest[index + 1])
+            index += 1
+        else:
+            print(__doc__)
+            return 2
+        index += 1
+    if action not in actions:
         print(__doc__)
         return 2
-    apply = "--apply" in flags
 
     from vps_credentials import (  # noqa: E402
         CredentialError,
@@ -173,6 +221,12 @@ def main(argv: list[str]) -> int:
     except CredentialError as exc:
         print(f"{exc}\nCreate it first: python tools/vps-deploy/vps_credentials.py ssh-keygen")
         return 1
+    if extra_pubkey is not None:
+        try:
+            public_line = parse_public_key(extra_pubkey.read_text(encoding="ascii"))
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
+            print(f"--pubkey {extra_pubkey}: {exc}")
+            return 2
 
     planned = {
         "audit": "\n".join(cmd for _label, cmd in AUDIT_COMMANDS),
@@ -209,6 +263,8 @@ def main(argv: list[str]) -> int:
                 return 1
         finally:
             client.close()
+        if extra_pubkey is not None:
+            return 0  # another machine's key: it proves itself from that machine
         probe = connect_vps(new_client(), auth=key_auth(base))
         try:
             print("KEY_LOGIN_OK", run(probe, "whoami")[1])

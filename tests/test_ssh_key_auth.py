@@ -141,3 +141,29 @@ def test_cli_refuses_unknown_flags_without_connecting(module, capsys) -> None:
     assert module.main([]) == 2
     assert module.main(["disable-password", "--force"]) == 2
     assert module.main(["reboot"]) == 2
+
+
+def test_extra_public_keys_must_be_one_plain_line(module, tmp_path: Path) -> None:
+    pytest.importorskip("cryptography")
+    spec = importlib.util.spec_from_file_location(
+        "vps_credentials", ROOT / "tools" / "vps-deploy" / "vps_credentials.py"
+    )
+    creds = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = creds
+    spec.loader.exec_module(creds)
+    line = creds.generate_ssh_key(tmp_path / "k", "unit-test-passphrase", comment="mac-mini@home")
+    assert module.parse_public_key(line + "\n") == line
+    body = line.split()[1]
+    for bad in (
+        "",
+        line + "\n" + line,
+        f'command="rm -rf /" ssh-ed25519 {body} x',
+        f'from="1.2.3.4" ssh-ed25519 {body}',
+        f"ssh-ed25519 {body} evil'quote",
+        "ssh-ed25519 not-base64!!",
+        f"ssh-rsa {body}",  # body says ed25519
+    ):
+        with pytest.raises(ValueError):
+            module.parse_public_key(bad)
+    assert module.main(["install-key", "--pubkey"]) == 2
+    assert module.main(["audit", "--pubkey", str(tmp_path / "k.pub")]) == 2
