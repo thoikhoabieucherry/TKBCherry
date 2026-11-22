@@ -1,10 +1,15 @@
 import sys
 import paramiko
 
-from vps_credentials import missing_credential_message, resolve_vps_connection
+from vps_credentials import (
+    connect_vps,
+    missing_credential_message,
+    resolve_vps_connection,
+    vps_credentials_ready,
+)
 
-HOST, USER, PASSWORD = resolve_vps_connection()
-if not PASSWORD:
+HOST, USER, _PASSWORD = resolve_vps_connection()
+if not vps_credentials_ready():
     print(missing_credential_message(), file=sys.stderr)
     raise SystemExit(1)
 
@@ -45,7 +50,7 @@ echo
 
 c = paramiko.SSHClient()
 c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-c.connect(HOST, username=USER, password=PASSWORD, timeout=30)
+connect_vps(c, host=HOST, user=USER, timeout=30)
 _, o, e = c.exec_command(PATCH, timeout=120)
 print(o.read().decode("utf-8", "replace"))
 err = e.read().decode("utf-8", "replace")

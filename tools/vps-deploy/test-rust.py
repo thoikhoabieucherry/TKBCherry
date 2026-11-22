@@ -12,7 +12,12 @@ import tempfile
 from pathlib import Path
 
 from deploy import new_ssh_client, run_ssh
-from vps_credentials import missing_credential_message, resolve_vps_connection
+from vps_credentials import (
+    connect_vps,
+    missing_credential_message,
+    resolve_vps_connection,
+    vps_credentials_ready,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,7 +37,7 @@ def make_rust_archive() -> Path:
 
 def main() -> int:
     host, user, password = resolve_vps_connection()
-    if not password:
+    if not vps_credentials_ready():
         print(missing_credential_message(), file=sys.stderr)
         return 1
 
@@ -42,7 +47,7 @@ def main() -> int:
     remote_dir = f"/tmp/tkb-rust-test-{nonce}"
     client = new_ssh_client()
     try:
-        client.connect(host, username=user, password=password, timeout=30, banner_timeout=30)
+        connect_vps(client, host=host, user=user, password=password)
         sftp = client.open_sftp()
         try:
             sftp.put(str(archive), remote_archive)

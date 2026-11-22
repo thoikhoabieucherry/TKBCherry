@@ -223,12 +223,12 @@ def update_vps(url: str, digest: str) -> None:
     tools = ROOT / "tools" / "vps-deploy"
     sys.path.insert(0, str(tools))
     try:
-        from vps_credentials import resolve_vps_connection  # type: ignore
+        from vps_credentials import connect_vps, resolve_vps_connection  # type: ignore
         import paramiko  # type: ignore
     except Exception as exc:
         print("Bo qua buoc VPS (thieu thu vien/cau hinh):", repr(exc)[:200])
         return
-    host, user, password = resolve_vps_connection()
+    host, user, _password = resolve_vps_connection()
     print(f"\n=== CAP NHAT BIEN MOI TRUONG TREN VPS {host} ===")
     dropin = (
         "[Service]\n"
@@ -238,7 +238,7 @@ def update_vps(url: str, digest: str) -> None:
     )
     c = paramiko.SSHClient()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect(host, username=user, password=password, timeout=30)
+    connect_vps(c, host=host, user=user, timeout=30)
     cmd = (
         "mkdir -p /etc/systemd/system/tkb-app.service.d && "
         "cat > /etc/systemd/system/tkb-app.service.d/cloudrun.conf <<'EOF'\n"
@@ -285,17 +285,17 @@ def update_profile_on_vps(profile_line: str) -> bool:
 
     sys.path.insert(0, str(ROOT / "tools" / "vps-deploy"))
     try:
-        from vps_credentials import resolve_vps_connection  # type: ignore
+        from vps_credentials import connect_vps, resolve_vps_connection  # type: ignore
         import paramiko  # type: ignore
     except Exception as exc:
         print("Bo qua buoc cap nhat profile (thieu thu vien/cau hinh):", repr(exc)[:200])
         return False
 
-    host, user, password = resolve_vps_connection()
+    host, user, _password = resolve_vps_connection()
     print("\n=== GHI PROFILE CLOUD RUN VAO CAU HINH TREN VPS %s ===" % host)
     c = paramiko.SSHClient()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect(host, username=user, password=password, timeout=30)
+    connect_vps(c, host=host, user=user, timeout=30)
     sftp = c.open_sftp()
     with sftp.file("/tmp/tkb_set_profile.py", "w") as fh:
         fh.write(REMOTE_SET_PROFILE)

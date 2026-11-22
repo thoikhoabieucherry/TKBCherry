@@ -20,7 +20,14 @@ import paramiko
 TOOLS_DIR = Path(__file__).resolve().parent
 if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
-from vps_credentials import missing_credential_message, resolve_vps_connection
+from vps_credentials import (
+    CredentialError,
+    connect_vps,
+    missing_credential_message,
+    read_public_key,
+    resolve_vps_connection,
+    vps_credentials_ready,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_PRODUCTION = "production"
@@ -202,7 +209,7 @@ def make_tarball(profile: str = PACKAGE_PRODUCTION) -> Path:
 
 def run_ssh(host: str, user: str, password: str, command: str, timeout: int = 1800) -> tuple[int, str, str]:
     client = new_ssh_client()
-    client.connect(host, username=user, password=password, timeout=30, banner_timeout=30)
+    connect_vps(client, host=host, user=user, password=password)
     try:
         stdin, stdout, stderr = client.exec_command(command, timeout=timeout, get_pty=True)
         del stdin
@@ -224,7 +231,7 @@ def upload_files(
     remote_script: str,
 ) -> None:
     client = new_ssh_client()
-    client.connect(host, username=user, password=password, timeout=30, banner_timeout=30)
+    connect_vps(client, host=host, user=user, password=password)
     try:
         sftp = client.open_sftp()
         sftp.put(str(tarball), remote_archive)
@@ -243,7 +250,7 @@ def main() -> int:
     parser.add_argument("--password", default=saved_password)
     parser.add_argument("--domain", default="tkbcherry.com")
     args = parser.parse_args()
-    if not args.password:
+    if not args.password and not vps_credentials_ready():
         print(missing_credential_message(), file=sys.stderr)
         return 1
 
@@ -267,6 +274,13 @@ def main() -> int:
         remote_script,
     )
 
+    try:
+        # install-server.sh authorises this key and then turns SSH passwords off.
+        deploy_pubkey = read_public_key()
+    except CredentialError:
+        deploy_pubkey = ""
+        print("No deploy SSH key (vps_credentials.py ssh-keygen); VPS keeps password SSH.",
+              file=sys.stderr)
     gmail_user = os.environ.get("GMAIL_USER", "")
     gmail_pass = os.environ.get("GMAIL_APP_PASSWORD", "")
     from_name = os.environ.get("FROM_NAME", "Cherry Scheduler")
@@ -282,6 +296,7 @@ def main() -> int:
         f"tar -xzf {shlex.quote(remote_archive)} -C {shlex.quote(remote_upload)}",
         f"export TKB_DEPLOY_UPLOAD_DIR={shlex.quote(remote_upload)}",
         f"export TKB_DOMAIN={shlex.quote(args.domain)}",
+        f"export TKB_DEPLOY_SSH_PUBKEY={shlex.quote(deploy_pubkey)}",
         f"export GMAIL_USER={shlex.quote(gmail_user)}",
         f"export GMAIL_APP_PASSWORD={shlex.quote(gmail_pass)}",
         f"export FROM_NAME={shlex.quote(from_name)}",

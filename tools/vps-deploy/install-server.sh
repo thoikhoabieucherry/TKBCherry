@@ -202,9 +202,46 @@ ufw allow OpenSSH || true
 ufw allow 'Nginx Full' || true
 ufw --force enable || true
 
-# SSH root still logs in with a password (deploy tools use it), and the server
-# sees ~17k failed root logins/day. fail2ban bans an IP after 5 failures in
-# 10 min (1 h, doubling up to 1 week). Correct-password logins never count.
+# SSH (21/11/2026): root logs in with the deploy key only. deploy.py passes the
+# public half of %LOCALAPPDATA%\TKBCherry\secrets\vps-ssh-ed25519 (made by
+# `vps_credentials.py ssh-keygen`) as TKB_DEPLOY_SSH_PUBKEY. Passwords are
+# switched off only when THAT key is in authorized_keys and the effective sshd
+# config checks out; otherwise nothing changes. Undo / console recovery:
+# rm /etc/ssh/sshd_config.d/00-tkb-keys-only.conf && systemctl reload ssh
+KEYS_ONLY_CONF=/etc/ssh/sshd_config.d/00-tkb-keys-only.conf
+DEPLOY_PUBKEY="${TKB_DEPLOY_SSH_PUBKEY:-}"
+if [ -n "$DEPLOY_PUBKEY" ]; then
+  install -d -m 700 -o root -g root /root/.ssh
+  touch /root/.ssh/authorized_keys
+  chmod 600 /root/.ssh/authorized_keys
+  if [ -s /root/.ssh/authorized_keys ] && [ -n "$(tail -c1 /root/.ssh/authorized_keys)" ]; then
+    echo >> /root/.ssh/authorized_keys
+  fi
+  grep -qxF "$DEPLOY_PUBKEY" /root/.ssh/authorized_keys \
+    || printf '%s\n' "$DEPLOY_PUBKEY" >> /root/.ssh/authorized_keys
+  cat > "$KEYS_ONLY_CONF" <<'EOF'
+# TKBCherry 2026-11-21: root logs in with SSH keys only (tools/vps-deploy/ssh-key-auth.py).
+# Undo: rm this file && systemctl reload ssh   (or: ssh-key-auth.py enable-password --apply)
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin prohibit-password
+EOF
+  chmod 644 "$KEYS_ONLY_CONF"
+  # (grep without -q: an early exit would SIGPIPE sshd and fail under pipefail)
+  if sshd -t && sshd -T -C user=root,host=probe.invalid,addr=203.0.113.1 \
+      | grep -x 'passwordauthentication no' >/dev/null; then
+    systemctl try-reload-or-restart ssh.service || true
+  else
+    rm -f "$KEYS_ONLY_CONF"
+    echo "Warning: keys-only sshd config rejected; SSH password login left on" >&2
+  fi
+else
+  echo "Warning: TKB_DEPLOY_SSH_PUBKEY not set; SSH password login left on" >&2
+fi
+
+# Internet-wide root password guessing (~17k tries/day before 21/11/2026):
+# fail2ban bans an IP after 5 failures in 10 min (1 h, doubling up to 1 week).
+# Successful logins never count.
 apt-get install -y fail2ban || true
 cat > /etc/fail2ban/jail.d/tkb-sshd.local <<'EOF'
 [sshd]

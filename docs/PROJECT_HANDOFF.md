@@ -9,6 +9,58 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-21 (tối) BẢO MẬT — SSH root chuyển sang khoá ed25519, VPS TỪ CHỐI mật khẩu
+
+- **Trạng thái VPS (ĐÃ ÁP ~16:25 UTC, chủ dự án duyệt trong chat)**: `/root/.ssh/authorized_keys` có đúng 1 khoá
+  `ssh-ed25519 … tkbcherry-deploy` (`SHA256:r6GbHbSy7k9SndcbHidPuSmD/4SysKJeKwvUmxcSGpY`);
+  `/etc/ssh/sshd_config.d/00-tkb-keys-only.conf` = `PasswordAuthentication no`, `KbdInteractiveAuthentication no`,
+  `PermitRootLogin prohibit-password`. Tên `00-` để đọc TRƯỚC `50-cloud-init.conf` (file đó ghi `PasswordAuthentication
+  yes`; sshd giữ giá trị đọc đầu tiên; `Include` ở dòng 12 của `sshd_config`). `sshd -T` sau khi áp: `passwordauthentication
+  no`, `kbdinteractiveauthentication no`, `permitrootlogin without-password`. Máy chủ chỉ còn mời `publickey`; thử đăng
+  nhập bằng mật khẩu thật → `BadAuthenticationType allowed=['publickey']`. fail2ban vẫn active (jail `sshd`, đang cấm 6 IP).
+  Trang chủ 200, `/api/health` 200 (sshd reload không đụng `tkb-app`). Ubuntu 24.04, OpenSSH 9.6p1, `ssh.service` +
+  `ssh.socket` cùng active.
+- **Khoá trên máy Windows của chủ dự án** (NGOÀI repo, cạnh kho DPAPI): `%LOCALAPPDATA%\TKBCherry\secrets\vps-ssh-ed25519`
+  (+ `.pub`), khoá riêng mã hoá OpenSSH; passphrase ngẫu nhiên lưu DPAPI ở `vps-ssh-key-passphrase.dpapi` (entropy riêng
+  `TKBCherry/VPS ssh key passphrase v1`). Tạo bằng `python tools/vps-deploy/vps_credentials.py ssh-keygen` (từ chối ghi đè;
+  ngoài Windows thì từ chối vì không có DPAPI). Mật khẩu root vẫn để trong `vps-password.dpapi` (console nhà cung cấp cần).
+- **Mã**: `vps_credentials.connect_vps(client, host=, user=, password=None)` là chỗ DUY NHẤT đăng nhập VPS: khoá trước,
+  mật khẩu chỉ là dự phòng ở `TKB_VPS_AUTH=auto` (mặc định; `key` = chỉ khoá, `password` = chỉ mật khẩu). Giờ VPS từ chối mật
+  khẩu nên dự phòng chỉ còn báo lỗi rõ ràng. Biến khác: `TKB_VPS_KEY_FILE`, `TKB_VPS_KEY_PASSPHRASE`. Cả 17 script paramiko
+  (`tools/vps-deploy/*.py`, `tools/cloud-run/deploy-all.py`) đã chuyển; kiểm sẵn sàng bằng `vps_credentials_ready()` (có khoá
+  là đủ). `deploy-web-quick.py` không thử lại khi sai khoá/mật khẩu (tránh fail2ban đếm). `vps_credentials.py status` in
+  `mode/key/key_passphrase/password`.
+- **Công cụ mới `tools/vps-deploy/ssh-key-auth.py`** (không `--apply` = chỉ in lệnh, không kết nối): `audit` (chỉ đọc),
+  `install-key [--apply] [--pubkey other.pub]`, `disable-password --apply` (giữ 1 phiên khoá mở; ghi drop-in → `sshd -t` →
+  kiểm `sshd -T -C user=root,…` → `systemctl try-reload-or-restart ssh.service` → đăng nhập MỚI bằng khoá + hỏi máy chủ còn
+  mời cách nào bằng `auth_none` (không gửi credential); hỏng chỗ nào thì phiên đang mở xoá file + reload), `enable-password
+  --apply` (gỡ drop-in). `install-server.sh` (cài máy mới) nhận khoá công khai qua `TKB_DEPLOY_SSH_PUBKEY` (do `deploy.py`
+  truyền) rồi mới ghi cùng drop-in, giữ lại chỉ khi `sshd -t` + `sshd -T` khớp.
+- **Khôi phục khi bị khoá ngoài**: vào **console web của nhà cung cấp VPS** (tty cục bộ — root + mật khẩu vẫn đăng nhập được,
+  vì chỉ sshd tắt mật khẩu) rồi chạy `rm /etc/ssh/sshd_config.d/00-tkb-keys-only.conf && systemctl reload ssh`. Khoá còn chạy
+  thì từ máy Windows: `python tools/vps-deploy/ssh-key-auth.py enable-password --apply`. Mất máy Windows / mất khoá: vào console,
+  thêm khoá mới vào `/root/.ssh/authorized_keys` (hoặc gỡ drop-in), rồi `vps_credentials.py ssh-keygen` trên máy mới.
+- **Máy khác (vd. máy Mac) cần SSH**: tạo khoá ở máy đó (`ssh-keygen -t ed25519 -f ~/.ssh/tkbcherry_vps`, đặt
+  `TKB_VPS_KEY_FILE` + `TKB_VPS_KEY_PASSPHRASE`), gửi file `.pub` về máy Windows, chạy `ssh-key-auth.py install-key --apply
+  --pubkey <file.pub>`. Script tạm trong `scratch/` còn gọi `client.connect(..., password=...)` sẽ hỏng — đổi sang
+  `connect_vps(client)`.
+- **"test_vps_credentials FAIL" (mục 21/11 bên dưới) là đọc nhầm**: `run_tests.py` liệt kê nó là mục mới + pass; mục hỏng
+  thật là `test_vps_deploy_packaging::test_deploy_files_rejects_powershell_backslash_args` — `deploy-files.py` in docstring
+  tiếng Việt ra pipe cp1252 → `UnicodeEncodeError`, thoát 1 thay vì 2 (script dừng trước SSH). Đã vá (`reconfigure(errors=
+  "replace")`).
+- **Kiểm thử**: `tests/test_vps_credentials.py` (18 test: khoá trước, dự phòng mật khẩu, `key` không dự phòng, khoá hỏng
+  không chạm máy chủ, quét tĩnh không script nào `.connect(..., password=)`), `tests/test_ssh_key_auth.py` (10 test: chạy lệnh
+  sshd sinh ra với `sshd`/`systemctl` giả — mọi nhánh lỗi xoá drop-in, không reload cấu hình chưa kiểm; `install-key` không
+  trùng; `--pubkey` chỉ nhận 1 dòng khoá trơn). Lệnh: `python -m pytest tests/test_vps_credentials.py
+  tests/test_ssh_key_auth.py tests/test_vps_deploy_packaging.py -q`. `python run_tests.py` (worktree sạch nhánh
+  `claude/ssh-key-auth`): 146/168, "Khong co test nao moi hong so voi moc chuan"; 22 FAIL đều có sẵn hoặc là mục mới không
+  liên quan (js-guard 3, js-e2e 17, `test_cloud_run_deploy_assets` kiểm `deploy.ps1`) — diff này không đụng `web/`,
+  `e2e_tests/`, `deploy.ps1`. `test_ssh_key_auth` FAIL **một lần** trong lượt đầy đủ đó nhưng không tái hiện (5 lần pytest +
+  2 lần `run_tests.py --group py-infra` đều qua) — nghi Git Bash chậm/lỗi fork khi máy tải nặng; gặp lại thì chạy
+  `run_tests.py --group py-infra -v` để có chi tiết.
+- **Còn mở**: (1) host key VPS chưa được ghim — đa số script dùng `AutoAddPolicy` (nay khoá công khai không lộ credential qua
+  MITM như mật khẩu, nhưng nên ghim vân tay host key vào `vps-config.json`); (2) `limit_req` nginx cho `/api/auth/*` (như cũ).
+
 ## 2026-11-21 BẢO MẬT — máy quét lỗ hổng 143.246.203.109 + SSH bị dò mật khẩu: chặn IP ở nginx, cài fail2ban
 
 - **Sự việc**: chủ dự án thấy tài khoản lạ ở Super Admin (`marcusjreed`, trường "Reedline Analytics" `schbfc44ad803`, IP
@@ -52,8 +104,8 @@
   rust_api/src/auth.rs web/shared/runtime.js` rồi `build-rust.py --apply`.
 - **Còn mở**:
   1. `blockedIps` của app vẫn chỉ chặn login/register (chặn toàn site thì dùng `block-ip-nginx.py`).
-  2. SSH vẫn cho root đăng nhập bằng mật khẩu. Chuyển sang khoá SSH + `PasswordAuthentication no` cần sửa `vps_credentials.py`
-     và mọi script paramiko trước — làm riêng.
+  2. ~~SSH vẫn cho root đăng nhập bằng mật khẩu.~~ **XONG cùng tối** — khoá ed25519 + `PasswordAuthentication no`, xem mục
+     "2026-11-21 (tối)" ở trên.
   3. Chưa có giới hạn tốc độ nginx (`limit_req`) cho `/api/auth/*`; khoá đăng nhập sai hiện là bộ đếm trong RAM của Rust.
 - Lưu ý: **Khoá** chứ đừng **Xoá** trường giả — xoá gỡ luôn `blockedIps` của trường và cho IP đăng ký lại.
 - `python run_tests.py` (21/11, cây chính): 6 test planner báo [MOI HONG] (`planner_constraint_audit_stale_class`,

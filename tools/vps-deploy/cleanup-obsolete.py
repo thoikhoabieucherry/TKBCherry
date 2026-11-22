@@ -21,7 +21,11 @@ if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
 from deploy import run_ssh  # noqa: E402
-from vps_credentials import missing_credential_message, resolve_vps_connection  # noqa: E402
+from vps_credentials import (  # noqa: E402
+    missing_credential_message,
+    resolve_vps_connection,
+    vps_credentials_ready,
+)
 
 
 REMOTE_SCRIPT = r'''
@@ -206,7 +210,7 @@ def main() -> int:
     args = parser.parse_args()
 
     host, user, password = resolve_vps_connection()
-    if not password:
+    if not vps_credentials_ready():
         print(missing_credential_message(), file=sys.stderr)
         return 1
 

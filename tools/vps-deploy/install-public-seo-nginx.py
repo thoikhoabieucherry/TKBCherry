@@ -16,7 +16,7 @@ usage:
 Safety: the current config is copied to /root/tkb-backups/nginx-public-seo-<stamp>/
 first; if `nginx -t` fails the backup is restored and nginx is NOT reloaded.
 Idempotent (block delimited by TKB_PUBLIC_SEO_BEGIN/END markers).
-Password: TKB_VPS_PASSWORD or the DPAPI store (see vps_credentials.py).
+Login: SSH key via vps_credentials.connect_vps (password only as fallback).
 
 Files: /opt/cherry-scheduler is mode 0700 (it holds the SQLite DB), so the
 nginx worker (www-data) cannot read anything aliased inside it (403). `--apply`
@@ -91,16 +91,20 @@ def main() -> int:
     remove = "--remove" in sys.argv
 
     import paramiko  # noqa: E402
-    from vps_credentials import missing_credential_message, resolve_vps_connection  # noqa: E402
+    from vps_credentials import (  # noqa: E402
+        connect_vps,
+        missing_credential_message,
+        resolve_vps_connection,
+        vps_credentials_ready,
+    )
 
-    host, user, password = resolve_vps_connection()
-    if not password:
+    host, user, _password = resolve_vps_connection()
+    if not vps_credentials_ready():
         print(missing_credential_message())
         return 1
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(host, username=user, password=password, timeout=30, banner_timeout=30,
-                   auth_timeout=30, look_for_keys=False, allow_agent=False)
+    connect_vps(client, host=host, user=user, timeout=30)
 
     def run(cmd: str, timeout: int = 60) -> tuple[int, str]:
         _, out, err = client.exec_command(cmd, timeout=timeout)
