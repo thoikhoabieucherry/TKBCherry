@@ -68,6 +68,10 @@
   KHTN 6/6 liền tiết 2-3). CÒN MỞ: lớp 8/7 trống cả sáng T3 — nghẽn cấu trúc: sáng T3 tổ Toán, LS-ĐL, Tin (+GDCD) cùng nghỉ, sức chứa GV 144 ô/140 cần
   (MT.Phát 4 ô chỉ dạy 2 tiết) nên luôn có ~1 lớp thiếu; cần chủ dự án cho 1 GV tổ nghỉ T3 dạy sáng T3 hoặc chấp nhận. Bài học LNS: vùng 13-15 lớp không hội tụ trong 100s;
   vùng 3-5 lớp quanh lớp lỗi (12-15s) mới ra OPTIMAL.
+- **BẢN CUỐI 22/11 ~21:40** (`_updatedAt` 1795358437102, `final11.json` = `live_f11.json`): 1203/1203, RB Node **0**, `h8_finalize` 0 cảnh báo; GV 420 buổi / 1 buổi 1 tiết /
+  27 trống 1 / 0 trống 2. Gỡ được lỗ sáng T3 nhờ làm như TKB 6: cho **trọn buổi SÁNG liên kết (Tin QT 2 + TATC 2)** — TKB 6 lấp sáng T3 bằng 16 tiết LK;
+  bản mới có 7 buổi sáng như vậy (6/4, 6/6, 7/3 sáng T3; 6/5, 7/4, 7/6 sáng T4; 8/5 sáng T5). Bỏ `allowMorning:false` của TATC/THQT (giữ TABN, STEM chỉ chiều theo luật trường).
+  Giữ ô chủ dự án tự dời 21:03: STEM 9/1 → chiều T4 tiết 4 (mở riêng ô đó cho 9/1).
 - Công cụ `scratch/hvl7/`: `build8.py`, `h8_lns.py` (giải cả trường K=35 rồi LNS; `FORCE=` nhắm lớp), `h8_finalize.py [--preview]`, `export8.py`, `lk8_check.py`.
   Excel: `phancong/hovanlongchinh/moi2/TKB LIEN KET - TKB7 lan 2 (22-11-2026).xlsx` (file lần 1 cùng thư mục đã lỗi thời).
 
