@@ -63,6 +63,11 @@
 - Kết quả đã ghi (`_updatedAt` 1795351827402, `scratch/hvl7/final8.json` = `live_f8.json`): 1203/1203 tiết, 0 tiết vào ô nghỉ GV, STEM không đụng tiết,
   GV 417 buổi / 2 buổi 1 tiết / 33 trống 1 / 0 trống 2. RB Node 27 dòng CÒN LẠI (chưa gỡ được, đã báo chủ dự án): VA.Cảnh 3 buổi sáng (luật 2, 15 dòng),
   GDTC thiếu tiết đôi 7/1, 7/6, 8/2, 9/9; TATC+TABN 7/3 cùng chiều T5; KHTN 6/5 sáng+chiều T3; KHTN 6/6 liền tiết 2-3 sáng; 6/7 có 2 buổi sáng 3 tiết.
+- **Cập nhật 20:06** (`_updatedAt` 1795355202423, `final9.json` = `live_f9.json`): chủ dự án yêu cầu GDTC phải tiết đôi, mỗi môn ≤2 tiết/buổi
+  (N Văn 8/6, 8/7, 9/3, 9/8 giới hạn 3 → 2). Đã gỡ: GDTC đủ tiết đôi, 7/3 tách TATC/TABN, VA.Cảnh 2 sáng/2 chiều. RB Node còn 5 dòng (KHTN 6/5 sáng+chiều T3,
+  KHTN 6/6 liền tiết 2-3). CÒN MỞ: lớp 8/7 trống cả sáng T3 — nghẽn cấu trúc: sáng T3 tổ Toán, LS-ĐL, Tin (+GDCD) cùng nghỉ, sức chứa GV 144 ô/140 cần
+  (MT.Phát 4 ô chỉ dạy 2 tiết) nên luôn có ~1 lớp thiếu; cần chủ dự án cho 1 GV tổ nghỉ T3 dạy sáng T3 hoặc chấp nhận. Bài học LNS: vùng 13-15 lớp không hội tụ trong 100s;
+  vùng 3-5 lớp quanh lớp lỗi (12-15s) mới ra OPTIMAL.
 - Công cụ `scratch/hvl7/`: `build8.py`, `h8_lns.py` (giải cả trường K=35 rồi LNS; `FORCE=` nhắm lớp), `h8_finalize.py [--preview]`, `export8.py`, `lk8_check.py`.
   Excel: `phancong/hovanlongchinh/moi2/TKB LIEN KET - TKB7 lan 2 (22-11-2026).xlsx` (file lần 1 cùng thư mục đã lỗi thời).
 
