@@ -9,6 +9,33 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-22 THCS Hồ Văn Long (Chính) TKB 7 (sid fiwemj2uyk7) — môn liên kết dồn vào khung chiều T2-T4 t2-4, thêm 9 GV liên kết — ĐÃ GHI vào kho
+
+- Yêu cầu: xếp TKB 7 theo `phancong/hovanlongchinh/moi2` (PCCM 21.11 + `XẾP LIÊN KẾT 20-11-2026.xlsx` + PDF danh sách HS); môn
+  liên kết xếp riêng trong khung chiều T2 t2-4, chiều T3/T4 t2-3, "giống Quang Trung, cần thì tăng GV liên kết"; sau đó "tối ưu, phải xếp được".
+- Dữ liệu: HS đăng ký TA (TATC 3 + TABN 2; K8 TATC 2) / Tin QT 2 / STEM 1, gom thành danh sách `6A1-6A6, 7A1-7A7, 8A1-8A6, 9A1-9A4`
+  trộn HS nhiều lớp (mỗi HS đúng 1 mã; mọi lớp chính khoá đều có HS đi LK) ⇒ cả khối trống chính khoá khi LK học. Chính khoá PCCM 21.11 = kho.
+- Chủ dự án chốt (hỏi trong phiên): khung 7 ô bất khả (nhóm 8 tiết) → **8 ô, thêm tiết 4 chiều T3**; trợ giảng TABN được là GV TATC
+  khác, giữ tiết đôi TABN/Tin QT/TATC → **thêm 9 GV**: `TA.LK1-4`, `GVBN8`, `TQT.4-7` (`TQT.3` có trong bảng phân công). Giữ đủ luật cũ
+  thì +15; bớt 1 GV TATC: 10′ UNKNOWN. Tin QT tiết đôi ⇒ 7 lớp Tin QT cùng lúc (cần đủ phòng máy).
+- **Lần ghi đầu (10:17) để 23 nhóm thành lớp riêng "6A1.."** — chủ dự án bác ("tách ra dãy lớp A làm gì, để các lớp như cũ ghép chung");
+  web còn coi "6A1" ≡ "6/1" nên lần tự lưu 10:30 làm rối khoá phân công. **Bản cuối: tiết LK của danh sách xAy đặt vào lớp x/y**
+  (đúng cách bảng phân công ghi "TATC 6/1"), ô khung của lớp không có danh sách (6/7, 7/8, 8/7, 8/8, 9/5-9/12) = nghỉ. Khi gộp, luật cũ
+  "Anh–TATC–TABN không cùng buổi" (34 lớp) và "Tin–THQT" có hiệu lực → xếp lại khung LK với TATC/TABN khác buổi (vẫn 9 GV thêm).
+- Bất khả do mất chiều T2-T4 (đếm ô, `cap.py`): CN.Dung −6, GD.Loan −5, TI.Thảo −4, TN.Hằng1 −3, TN.Quang −3, AN.Vân −1, TO.Thảo1 −1
+  → chủ dự án duyệt dạy vào buổi chuyên môn của tổ (thầy Quang thêm chiều T5); kho mở đúng các ô dùng trong `fixedOff.teacher`.
+  Cùng nguyên tắc (báo sau): SĐ.Thy (trường thêm luật 09:51 hôm nay: nghỉ mọi chiều) tự thiếu 1 ô → 1 tiết sáng T3; VA.Cảnh
+  `maxMorningAfternoon` 2/2 → tối đa 14/15 tiết → 2 sáng/3 chiều; GDTC 8/6 bỏ luật tiết đôi (TC.Dương 9 lớp, chỉ còn chỗ 8 tiết đôi).
+- K8 học chính khoá ở T2 t2 (GDĐP cô Hương chỉ chiều T2, ghim lại 8/1 t2, 8/2 t1 chiều T2), K9 ở T2 t2 + T3 t2; Tự học K9 (ghép 12 lớp)
+  ghim chiều T4 t1 + sáng T5 t4. STEM 6/1, 6/2, 6/3 cùng giờ (11 HS STEM của danh sách 6A6 học ghép).
+- **ĐÃ GHI 22/11 11:43** (`_updatedAt` 1795322607504, sao lưu kho trước mỗi lần ghi `scratch/hvl7/backup_fiwemj2uyk7_*_truoc-ghi.json`): 35 lớp,
+  1203 tiết, RB Node 0, kéo lại khớp. GV trường (bỏ GV LK/thỉnh giảng TA): 383→383 buổi, trống 1 tiết 49→30, trống 2 tiết 3→0,
+  buổi 1 tiết 31→47 (mỗi lớp chỉ còn 1 tiết chính khoá đầu chiều T2-T4). File cho trường: `phancong/hovanlongchinh/moi2/TKB LIEN KET - TKB7 (22-11-2026).xlsx`.
+- Lưu ý: "cả khối trống khi LK học" và 9 GV thêm chỉ có trong mô hình; tiết LK đều ghim nên bấm Cherry không phá khung LK.
+  RB Node không bắt lệch giờ dòng dạy ghép nhiều lớp (Tự học) — `h7m_finalize.py` tự kiểm. Công cụ `scratch/hvl7/` (`lk_model.py`
+  `--pair loose --k8core M2 --nosame 1`, `build_base7.py` → `merge_back.py`, `h7_lns.py` + `SOFTFO=softfo.json`, `cap.py`, `h7m_finalize.py`,
+  `apply.py` dùng `connect_vps` từ worktree `claude/ssh-key-auth`). Test `run_tests.py`: 6 test planner FAIL như mục 21/11 (CRLF), không liên quan.
+
 ## 2026-11-21 BẢO MẬT — máy quét lỗ hổng 143.246.203.109 + SSH bị dò mật khẩu: chặn IP ở nginx, cài fail2ban
 
 - **Sự việc**: chủ dự án thấy tài khoản lạ ở Super Admin (`marcusjreed`, trường "Reedline Analytics" `schbfc44ad803`, IP
