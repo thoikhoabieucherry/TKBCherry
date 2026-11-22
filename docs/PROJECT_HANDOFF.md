@@ -9,6 +9,24 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-22 THCS Hồ Văn Long PHÂN HIỆU TKB 7 (sid g1eegcr1ww7) — ghép lớp tiết liên kết, K9 nghỉ T7, ≤8 phòng chiều K9 — ĐÃ GHI vào kho
+
+- Yêu cầu trường (chủ dự án dán) + `phancong/hovanlong/moi/` (PHAN_LOP K8 v4, K9 phương án B, sơ đồ trường PDF): K9 xếp lại buổi chiều
+  cho HS nghỉ T7 (bỏ khung cứng 9/15–20 chiều T2-T4, 9/21–27 chiều T5-T7); 9/23–9/27 ở dãy D nhường phòng buổi chiều cho 8/11–8/15;
+  K6 chỉ ghép ToánK 6/8+6/10, 6/9+6/11; K7 chỉ ghép ToánK 7/9+7/10; K8/K9 ghép TABN/KNS/STEM theo file; ToánK 9/13+9/14.
+- Chủ dự án chốt (hỏi trong phiên): bỏ ABN 9/13, 9/14 (0 HS) và ToánK 8/9, 8/10 (không mở lớp), đóng 2 ô t5 chiều mỗi lớp;
+  K9 chiều = 3 buổi từ tiết 3 (3+2+2 tiết), máy chọn ngày T2–T6; mỗi tiết chiều ≤8 lớp/nhóm K9 9/15–27 (nhóm ghép = 1 phòng);
+  nhóm ghép khác GV trung tâm → máy chọn 1 GV trong các GV hiện có của nhóm.
+- Kho: 24 dòng Dạy ghép `ten "<môn> (ghép)"`, nhãn = mã môn, 1 GV (gỡ phân công chính lớp|môn, chiếu `pccm*` + `dayGhepProjected`);
+  `maxPeriods.day = 8` cho mọi GV trừ GV chỉ dạy MT/Nhạc/CN (luật chung của chủ dự án 30/10). Ô dư của 7/14–7/20 (trường mở 34 ô/33 tiết)
+  chỉ được trống ở sáng t5. Luật phòng chiều K9 chỉ có trong mô hình (kho không biểu diễn được).
+- Kết quả đã ghi (`_updatedAt` 1795323374514, sao lưu `scratch/hvlph7/backup_g1eegcr1ww7_20261122-115547_truoc-ghi.json` = `live0.json`):
+  1820 tiết, RB Node 0, kiểm độc lập 0, kéo lại khớp. Mọi GV 594 buổi / 1 buổi 1 tiết (GD.Thắm, nghỉ T5) / 32 trống 1 / 0 trống 2
+  (TKB 6: 615/4/39/0); GV trường 504/1/27 (TKB 6: 501/2/33). Phòng chiều K9 max 8; mọi lớp dãy D có phòng mượn cố định cả buổi (`report7.py`).
+- Công cụ `scratch/hvlph7/`: `model7.py` (CP-SAT: khung biến K9/8/9/8/10, nhóm ghép + chọn GV, phòng, ≤8 tiết/ngày), `lns7.py`,
+  `finalize7.py`, `verify7.py`, `report7.py`, `apply.py` (connect_vps, so băm `live0.json`). Cách nhanh nhất: giải toàn trường 25′ có gợi ý
+  từ bản LNS tốt nhất (19 448 → 18 333).
+
 ## 2026-11-22 THCS Hồ Văn Long (Chính) TKB 7 (sid fiwemj2uyk7) — môn liên kết dồn vào khung chiều T2-T4 t2-4, thêm 9 GV liên kết — ĐÃ GHI vào kho
 
 - Yêu cầu: xếp TKB 7 theo `phancong/hovanlongchinh/moi2` (PCCM 21.11 + `XẾP LIÊN KẾT 20-11-2026.xlsx` + PDF danh sách HS); môn
