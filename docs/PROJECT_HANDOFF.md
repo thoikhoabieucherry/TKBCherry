@@ -24,7 +24,7 @@
   "Anh–TATC–TABN không cùng buổi" (34 lớp) và "Tin–THQT" có hiệu lực → xếp lại khung LK với TATC/TABN khác buổi (vẫn 9 GV thêm).
 - Bất khả do mất chiều T2-T4 (đếm ô, `cap.py`): CN.Dung −6, GD.Loan −5, TI.Thảo −4, TN.Hằng1 −3, TN.Quang −3, AN.Vân −1, TO.Thảo1 −1
   → chủ dự án duyệt dạy vào buổi chuyên môn của tổ (thầy Quang thêm chiều T5); kho mở đúng các ô dùng trong `fixedOff.teacher`.
-  Cùng nguyên tắc (báo sau): SĐ.Thy (trường thêm luật 09:51 hôm nay: nghỉ mọi chiều) tự thiếu 1 ô → 1 tiết sáng T3; VA.Cảnh
+  Cùng nguyên tắc (báo sau; chủ dự án đồng ý GIỮ, 22/11): SĐ.Thy (trường thêm luật 09:51 hôm nay: nghỉ mọi chiều) tự thiếu 1 ô → 1 tiết sáng T3; VA.Cảnh
   `maxMorningAfternoon` 2/2 → tối đa 14/15 tiết → 2 sáng/3 chiều; GDTC 8/6 bỏ luật tiết đôi (TC.Dương 9 lớp, chỉ còn chỗ 8 tiết đôi).
 - K8 học chính khoá ở T2 t2 (GDĐP cô Hương chỉ chiều T2, ghim lại 8/1 t2, 8/2 t1 chiều T2), K9 ở T2 t2 + T3 t2; Tự học K9 (ghép 12 lớp)
   ghim chiều T4 t1 + sáng T5 t4. STEM 6/1, 6/2, 6/3 cùng giờ (11 HS STEM của danh sách 6A6 học ghép).
