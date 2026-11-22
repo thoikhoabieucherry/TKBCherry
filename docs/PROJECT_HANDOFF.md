@@ -40,6 +40,14 @@
   `--k7_max_exc 1` INFEASIBLE). Chủ dự án chọn đóng cả 7 lớp. Kết quả: mọi GV 583 / 3 (GD.Thắm, GEMS1, STEM2) / 37 / 0; GV trường
   491/1/33; RB 0, verify 0, kéo lại khớp. Cách làm: sửa riêng 7 lớp (`--free`, gợi ý `q4.json`) rồi toàn trường có gợi ý + `--ref q4_store.json`
   (giải toàn trường thẳng từ gợi ý không hợp lệ cho 9 buổi lẻ — đừng làm vậy). Lời giải `q10.json`.
+- **Lượt 4 (22/11 ~18:05, ĐÃ GHI `_updatedAt` 1795345475335; bản thử 17:50 = 1795343343952):** trường bổ sung:
+  (1) lớp ghép ToánK thì 2 tiết ABN bổ trợ cũng ghép: thêm nhóm ABN 6/8+6/10 (Smart), 6/9+6/11 (Smart2), 7/9+7/10 (Smart),
+  9/13+9/14 (Smart) — **khôi phục ABN 9/13, 9/14** (lượt 1 đã bỏ vì 0 HS), mở lại ô t5 chiều T2/T3;
+  (2) AVS2 là GV của GEM → ABN 6/14, 6/15, 7/11, 7/13 thành nhóm 1 lớp, máy chọn trong GEMS1–5 (`CAND_OVERRIDE`): 6/14, 7/13 GEMS2;
+  6/15, 7/11 GEMS4; AVS2 còn trong danh sách GV nhưng 0 tiết; (3) bỏ ABN 8/9, 8/10 (đi chung ToánK đã bỏ) → `o5` Σ=1 (đóng 4/5 ô t5 chiều).
+  `--w_chg 0`, nên nhóm ABN K8/K9 cũng đổi GV trong ứng viên của nhóm: GEMS3 chỉ còn 2 tiết/1 buổi, GEMS5 gánh phần lớn ABN K9.
+  Kết quả: mọi GV 580 / 3 (Thắm, GEMS1, STEM2) / 37 / 0; GV trường 494/1/30; RB 0, verify 0, kéo lại khớp. Quy trình: sửa riêng lớp bị
+  ảnh hưởng (`--free`, 5′) → toàn trường 25′ → LNS 3×8 → toàn trường 20′ (`r3.json`). `model7_before_abn.py` = bản trước lượt 4.
 - `run_tests.py` 22/11: 7 test báo "mới hỏng" (6 js-e2e đọc `web/pages/phanmon.js`, vd. không tìm thấy kết thúc `tkbAdoptRemoteData`,
   + `test_engine_v3_edge_pair_rule`) — có sẵn trên nhánh, không do thay đổi tài liệu này; chưa điều tra.
 
