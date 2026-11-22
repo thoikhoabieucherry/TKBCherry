@@ -24,8 +24,17 @@
   1820 tiết, RB Node 0, kiểm độc lập 0, kéo lại khớp. Mọi GV 594 buổi / 1 buổi 1 tiết (GD.Thắm, nghỉ T5) / 32 trống 1 / 0 trống 2
   (TKB 6: 615/4/39/0); GV trường 504/1/27 (TKB 6: 501/2/33). Phòng chiều K9 max 8; mọi lớp dãy D có phòng mượn cố định cả buổi (`report7.py`).
 - Công cụ `scratch/hvlph7/`: `model7.py` (CP-SAT: khung biến K9/8/9/8/10, nhóm ghép + chọn GV, phòng, ≤8 tiết/ngày), `lns7.py`,
-  `finalize7.py`, `verify7.py`, `report7.py`, `apply.py` (connect_vps, so băm `live0.json`). Cách nhanh nhất: giải toàn trường 25′ có gợi ý
-  từ bản LNS tốt nhất (19 448 → 18 333).
+  `finalize7.py`, `verify7.py`, `report7.py`, `apply.py` (connect_vps, so băm bản mong đợi, `--expect <file>`). Cách nhanh nhất: giải toàn
+  trường 25′ có gợi ý từ bản LNS tốt nhất (19 448 → 18 333).
+- **Tối ưu lượt 2 (chiều 22/11, ĐÃ GHI `_updatedAt` 1795332040472, sao lưu `backup_g1eegcr1ww7_20261122-142040_truoc-ghi.json`):** bỏ
+  điểm "đổi ô so với live0" (`--w_chg 0`, không `--ref`), LNS 3 chuỗi × 10 vùng 17 170 → 17 065, rồi toàn trường 25′ + 20′ có gợi ý →
+  16 715 (`q4.json`). Mọi GV 579 buổi / 1 / 28 / 0; GV trường 489/1/24. Khung chiều K9 và GV nhóm ghép giữ nguyên; 576 ô đổi so với lượt 1.
+- **Buổi 1 tiết của GD.Thắm là bất khả (đã chứng minh):** 10 lớp chiều (6/16–19, 8/16–21) có buổi sáng toàn GDTC/TinQT cố định, nên
+  GDCD phải ở chiều; cô nghỉ T5, T7 và tiết 1–2 mọi buổi chiều; chiều T2 tiết 4–5 là HĐTN cố định mọi lớp → chỉ đúng 10 ô (T2 t3 + T3/T4/T6
+  t3–5) cho 10 tiết, T2 chiều luôn 1 tiết. `model7.py --max_single 0` → INFEASIBLE 15 s. Muốn hết: cho cô dạy tiết 2 chiều một ngày
+  T3/T4/T6, hoặc chuyển GDCD một lớp chiều cho GV khác.
+- `run_tests.py` 22/11: 7 test báo "mới hỏng" (6 js-e2e đọc `web/pages/phanmon.js`, vd. không tìm thấy kết thúc `tkbAdoptRemoteData`,
+  + `test_engine_v3_edge_pair_rule`) — có sẵn trên nhánh, không do thay đổi tài liệu này; chưa điều tra.
 
 ## 2026-11-22 THCS Hồ Văn Long (Chính) TKB 7 (sid fiwemj2uyk7) — môn liên kết dồn vào khung chiều T2-T4 t2-4, thêm 9 GV liên kết — ĐÃ GHI vào kho
 
