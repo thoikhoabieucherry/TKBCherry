@@ -51,6 +51,21 @@
 - `run_tests.py` 22/11: 7 test báo "mới hỏng" (6 js-e2e đọc `web/pages/phanmon.js`, vd. không tìm thấy kết thúc `tkbAdoptRemoteData`,
   + `test_engine_v3_edge_pair_rule`) — có sẵn trên nhánh, không do thay đổi tài liệu này; chưa điều tra.
 
+## 2026-11-22 (tối) THCS Hồ Văn Long (Chính) TKB 7 — LẦN 2: làm lại môn liên kết theo đúng file, ngày nghỉ GV = TKB 6 — ĐÃ GHI vào kho
+
+- Chủ dự án bác bản ghi 11:43 (mục dưới): "phân công liên kết bị sai". Làm lại: phân công LK theo ĐÚNG `moi2/21.11-...xlsx`
+  (không thêm GV; GV TATC lớp nào trợ giảng TABN lớp đó; Tin QT Thảo K6 / Dũng K7 / TQT.3 K8; STEM Duy 6/1-6/5, ST.3 7/1-7/4, Khải 8/1-8/3 + 9/1);
+  chốt thêm: cô Mỹ 8/4, 7/1, 7/2; thầy Đoàn Quốc Vũ 9/3; cô Anh Vũ bỏ TATC; TATC không bắt buộc tiết đôi.
+- Luật khung mới (mỗi lớp): LK chỉ buổi chiều, sau 2 tiết chính khoá (cuối buổi) hoặc trọn buổi chiều LK; không giới hạn chiều T2-T4.
+  Mở tiết 4 chiều T5, T6 (GV nghỉ tiết 3 chiều hôm đó nghỉ luôn tiết 4). "Học sinh không được nghỉ buổi nào": lớp nào cũng đủ 10 buổi, mỗi buổi ≥2 tiết.
+- Ngày nghỉ GV phục hồi theo TKB 6 (`fiwemj2uyk6`; khác bản TKB 7 09:51 đúng 1 chỗ: không có "SĐ.Thy nghỉ các chiều"); KHÔNG còn tiết nào
+  trong buổi chuyên môn tổ. Luật "số buổi tối đa" của 14 GV do chủ dự án tự bỏ trên web 19:29 — giữ theo bản đó.
+- Kết quả đã ghi (`_updatedAt` 1795351827402, `scratch/hvl7/final8.json` = `live_f8.json`): 1203/1203 tiết, 0 tiết vào ô nghỉ GV, STEM không đụng tiết,
+  GV 417 buổi / 2 buổi 1 tiết / 33 trống 1 / 0 trống 2. RB Node 27 dòng CÒN LẠI (chưa gỡ được, đã báo chủ dự án): VA.Cảnh 3 buổi sáng (luật 2, 15 dòng),
+  GDTC thiếu tiết đôi 7/1, 7/6, 8/2, 9/9; TATC+TABN 7/3 cùng chiều T5; KHTN 6/5 sáng+chiều T3; KHTN 6/6 liền tiết 2-3 sáng; 6/7 có 2 buổi sáng 3 tiết.
+- Công cụ `scratch/hvl7/`: `build8.py`, `h8_lns.py` (giải cả trường K=35 rồi LNS; `FORCE=` nhắm lớp), `h8_finalize.py [--preview]`, `export8.py`, `lk8_check.py`.
+  Excel: `phancong/hovanlongchinh/moi2/TKB LIEN KET - TKB7 lan 2 (22-11-2026).xlsx` (file lần 1 cùng thư mục đã lỗi thời).
+
 ## 2026-11-22 THCS Hồ Văn Long (Chính) TKB 7 (sid fiwemj2uyk7) — môn liên kết dồn vào khung chiều T2-T4 t2-4, thêm 9 GV liên kết — ĐÃ GHI vào kho
 
 - Yêu cầu: xếp TKB 7 theo `phancong/hovanlongchinh/moi2` (PCCM 21.11 + `XẾP LIÊN KẾT 20-11-2026.xlsx` + PDF danh sách HS); môn
