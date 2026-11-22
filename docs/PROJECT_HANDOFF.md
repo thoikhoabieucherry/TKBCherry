@@ -33,6 +33,13 @@
   GDCD phải ở chiều; cô nghỉ T5, T7 và tiết 1–2 mọi buổi chiều; chiều T2 tiết 4–5 là HĐTN cố định mọi lớp → chỉ đúng 10 ô (T2 t3 + T3/T4/T6
   t3–5) cho 10 tiết, T2 chiều luôn 1 tiết. `model7.py --max_single 0` → INFEASIBLE 15 s. Muốn hết: cho cô dạy tiết 2 chiều một ngày
   T3/T4/T6, hoặc chuyển GDCD một lớp chiều cho GV khác.
+- **Lượt 3 (22/11 ~16:03, ĐÃ GHI `_updatedAt` 1795338171858, sao lưu `backup_g1eegcr1ww7_20261122-160251_truoc-ghi.json`):** chủ dự án
+  "chỗ cô Thắm không sao", bỏ lỗ trống: 7/14–7/20 (34 ô/33 tiết) **nghỉ T7 sáng tiết 5** (OFF 3 chỗ) → 33/33, hết ô trống.
+  `model7.py --k7_sat5_off` (đóng ô 54); `finalize7.py`/`verify7.py` hiểu khung mới. Hệ quả đã chứng minh: luật ABN/STEM cuối buổi
+  + mất 7 ô cuối buổi T7 → **≥3 buổi 1 tiết** (`--max_single 1/2` INFEASIBLE); chừa 2 lớp (7/15, 7/16) mới giữ được 1 (`--k7_sat5_w`,
+  `--k7_max_exc 1` INFEASIBLE). Chủ dự án chọn đóng cả 7 lớp. Kết quả: mọi GV 583 / 3 (GD.Thắm, GEMS1, STEM2) / 37 / 0; GV trường
+  491/1/33; RB 0, verify 0, kéo lại khớp. Cách làm: sửa riêng 7 lớp (`--free`, gợi ý `q4.json`) rồi toàn trường có gợi ý + `--ref q4_store.json`
+  (giải toàn trường thẳng từ gợi ý không hợp lệ cho 9 buổi lẻ — đừng làm vậy). Lời giải `q10.json`.
 - `run_tests.py` 22/11: 7 test báo "mới hỏng" (6 js-e2e đọc `web/pages/phanmon.js`, vd. không tìm thấy kết thúc `tkbAdoptRemoteData`,
   + `test_engine_v3_edge_pair_rule`) — có sẵn trên nhánh, không do thay đổi tài liệu này; chưa điều tra.
 
