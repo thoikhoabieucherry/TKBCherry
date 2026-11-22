@@ -153,17 +153,30 @@ def test_readiness_by_mode() -> None:
 
 
 class FakeClient:
-    """Records connect() calls; rejects the key or the password on request."""
+    """Records connect() calls; rejects the key or the password on request.
 
-    def __init__(self, paramiko_module, reject_key: bool = False, reject_password: bool = False):
+    With ``server_key`` it shows that key to the missing-host-key policy before
+    looking at credentials, in the same order as paramiko.SSHClient.connect.
+    """
+
+    def __init__(
+        self, paramiko_module, reject_key: bool = False, reject_password: bool = False, server_key=None
+    ):
         self.paramiko = paramiko_module
         self.reject_key = reject_key
         self.reject_password = reject_password
+        self.server_key = server_key
+        self.policy = None
         self.calls: list[dict] = []
         self.closed = 0
 
+    def set_missing_host_key_policy(self, policy):
+        self.policy = policy
+
     def connect(self, host, **kwargs):
         self.calls.append({"host": host, **kwargs})
+        if self.server_key is not None and self.policy is not None:
+            self.policy.missing_host_key(self, host, self.server_key)
         if "pkey" in kwargs and self.reject_key:
             raise self.paramiko.AuthenticationException("key rejected")
         if "password" in kwargs and self.reject_password:
@@ -210,8 +223,10 @@ def test_connect_uses_the_key_first_and_never_sends_the_password(key_material) -
     import paramiko
 
     module, key_path, passphrase, _ = key_material
-    auth = module.VpsAuth("vps.test", "root", "pw-not-real", key_path, passphrase, "auto")
-    client = FakeClient(paramiko)
+    server_key = module.load_private_key(key_path, passphrase)  # any public key will do
+    pin = f"ssh-ed25519 {module.host_key_fingerprint(server_key)}"
+    auth = module.VpsAuth("vps.test", "root", "pw-not-real", key_path, passphrase, "auto", (pin,))
+    client = FakeClient(paramiko, server_key=server_key)
     warnings: list[str] = []
     assert module.connect_vps(client, auth=auth, warn=warnings.append) is client
     assert len(client.calls) == 1
@@ -220,6 +235,7 @@ def test_connect_uses_the_key_first_and_never_sends_the_password(key_material) -
     assert call["pkey"].get_name() == "ssh-ed25519"
     assert "password" not in call
     assert call["look_for_keys"] is False and call["allow_agent"] is False
+    assert isinstance(client.policy, module.PinnedHostKeyPolicy)
     assert warnings == []
 
 
@@ -290,6 +306,260 @@ def test_server_refusing_passwords_surfaces_as_auth_error(key_material) -> None:
     client = FakeClient(paramiko, reject_key=True, reject_password=True)
     with pytest.raises(paramiko.AuthenticationException):
         module.connect_vps(client, auth=auth, warn=lambda _m: None)
+
+
+# --- SSH host key pinning (22/11/2026) ---------------------------------------
+
+PIN_RE = re.compile(r"(?:ssh|ecdsa|sk)-[A-Za-z0-9@.-]+ SHA256:[A-Za-z0-9+/]{43}")
+
+
+def test_vps_config_pins_the_vps_host_key() -> None:
+    module = load_module()
+    config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    pins = config["hostKeys"]
+    assert pins and all(PIN_RE.fullmatch(pin) for pin in pins), pins
+    # The code fallback (unreadable json) must pin the same server.
+    assert module.DEFAULT_CONFIG["hostKeys"] == pins
+    assert module.load_vps_config()["hostKeys"] == pins
+    assert module.parse_host_key_pins(pins)
+
+
+def test_host_key_pins_come_from_env_or_config_and_bad_pins_fail_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = load_module()
+    fingerprint = "SHA256:" + "A" * 43
+    monkeypatch.setenv("TKB_VPS_HOST_KEYS", f"ssh-ed25519 {fingerprint}, ssh-rsa {fingerprint}")
+    assert module.resolve_host_key_pins() == (f"ssh-ed25519 {fingerprint}", f"ssh-rsa {fingerprint}")
+    monkeypatch.delenv("TKB_VPS_HOST_KEYS")
+
+    config = tmp_path / "vps-config.json"
+    monkeypatch.setattr(module, "CONFIG_PATH", config)
+    config.write_text(json.dumps({"host": "10.0.0.1"}), encoding="utf-8")
+    assert module.resolve_host_key_pins() == tuple(module.DEFAULT_CONFIG["hostKeys"])
+    config.write_text(json.dumps({"host": "10.0.0.1", "hostKeys": []}), encoding="utf-8")
+    assert module.resolve_host_key_pins() == ()  # explicit opt-out
+
+    for bad in ("SHA256:" + "A" * 43, "ssh-rsa MD5:aa:bb", "ssh-rsa SHA256:short", "ssh-rsa"):
+        with pytest.raises(module.CredentialError):
+            module.parse_host_key_pins([bad])
+    # A typo in hostKeys stops the login before any connection, not silently unpinned.
+    paramiko = pytest.importorskip("paramiko")
+    client = FakeClient(paramiko)
+    auth = module.VpsAuth("vps.test", "root", "pw-not-real", None, "", "auto", ("ssh-rsa SHA256:typo",))
+    with pytest.raises(module.CredentialError):
+        module.connect_vps(client, auth=auth, warn=lambda _m: None)
+    assert client.calls == []
+
+
+def test_host_key_fingerprint_matches_ssh_keygen(key_material) -> None:
+    import base64
+    import hashlib
+
+    module, key_path, passphrase, public_line = key_material
+    blob = base64.b64decode(public_line.split()[1])
+    expected = "SHA256:" + base64.b64encode(hashlib.sha256(blob).digest()).decode().rstrip("=")
+    key = module.load_private_key(key_path, passphrase)
+    assert module.host_key_fingerprint(key) == expected
+    assert PIN_RE.fullmatch(f"{key.get_name()} {expected}")
+
+
+@pytest.fixture()
+def ssh_server(key_material, tmp_path: Path):
+    """Start in-process SSH servers on 127.0.0.1; each records what clients sent."""
+    import socket
+    import threading
+    from types import SimpleNamespace
+
+    import paramiko
+
+    module, key_path, passphrase, _ = key_material
+    servers = []
+
+    class Recorder(paramiko.ServerInterface):
+        def __init__(self, events):
+            self.events = events
+
+        def get_allowed_auths(self, username):
+            return "publickey,password"
+
+        def check_auth_publickey(self, username, key):
+            self.events.append(("publickey", username))
+            return paramiko.AUTH_SUCCESSFUL
+
+        def check_auth_password(self, username, password):
+            self.events.append(("password", username))
+            return paramiko.AUTH_SUCCESSFUL
+
+    def start(*host_keys):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(8)
+        listener.settimeout(0.2)
+        server = SimpleNamespace(
+            port=listener.getsockname()[1], events=[], transports=[], stop=threading.Event(), listener=listener
+        )
+
+        def serve():
+            while not server.stop.is_set():
+                try:
+                    conn, _ = listener.accept()
+                except socket.timeout:
+                    continue
+                except OSError:
+                    return
+                server.events.append(("connection",))
+                transport = paramiko.Transport(conn)
+                for host_key in host_keys:
+                    transport.add_server_key(host_key)
+                server.transports.append(transport)
+                try:
+                    transport.start_server(server=Recorder(server.events))
+                except Exception:  # the client hung up after the key exchange
+                    pass
+
+        server.thread = threading.Thread(target=serve, daemon=True)
+        server.thread.start()
+        servers.append(server)
+        return server
+
+    def host_key(name: str):
+        path = tmp_path / "host-keys" / name
+        module.generate_ssh_key(path, "host-key-pass", comment=name)
+        return module.load_private_key(path, "host-key-pass")
+
+    def auth(pins, password="pw-not-real"):
+        return module.VpsAuth("127.0.0.1", "root", password, key_path, passphrase, "auto", tuple(pins))
+
+    def pin(key):
+        return f"{key.get_name()} {module.host_key_fingerprint(key)}"
+
+    yield SimpleNamespace(module=module, start=start, host_key=host_key, auth=auth, pin=pin)
+    for server in servers:
+        server.stop.set()
+        server.listener.close()
+        for transport in server.transports:
+            transport.close()
+        server.thread.join(timeout=5)
+
+
+def _client(paramiko, policy, known_hosts: Path | None = None):
+    client = paramiko.SSHClient()
+    if known_hosts is not None:
+        client.load_system_host_keys(str(known_hosts))
+    client.set_missing_host_key_policy(policy)
+    return client
+
+
+def test_pinned_host_key_lets_the_key_login_through(ssh_server) -> None:
+    import paramiko
+
+    env = ssh_server
+    real = env.host_key("real")
+    server = env.start(real)
+    client = _client(paramiko, paramiko.AutoAddPolicy())  # what most tools/vps-deploy scripts set
+    warnings: list[str] = []
+    try:
+        env.module.connect_vps(client, auth=env.auth([env.pin(real)]), port=server.port, warn=warnings.append)
+        assert client.get_transport().get_remote_server_key() == real
+    finally:
+        client.close()
+    assert server.events == [("connection",), ("publickey", "root")]
+    assert warnings == []
+
+
+def test_foreign_host_key_is_refused_before_any_credential(ssh_server) -> None:
+    import paramiko
+
+    env = ssh_server
+    real, impostor = env.host_key("real"), env.host_key("impostor")
+    server = env.start(impostor)
+    client = _client(paramiko, paramiko.AutoAddPolicy())
+    with pytest.raises(env.module.HostKeyError) as caught:
+        env.module.connect_vps(client, auth=env.auth([env.pin(real)]), port=server.port, warn=lambda _m: None)
+    assert isinstance(caught.value, env.module.CredentialError)
+    message = str(caught.value)
+    assert env.module.host_key_fingerprint(impostor) in message and env.pin(real) in message
+    # One handshake, then nothing: no SSH key, no password fallback, no second attempt.
+    assert server.events == [("connection",)]
+    assert client.get_transport() is None
+
+
+def test_known_hosts_entries_never_override_the_pin(ssh_server, tmp_path: Path) -> None:
+    """deploy.py / diagnose.py load known_hosts + RejectPolicy; the pin still decides."""
+    import paramiko
+
+    env = ssh_server
+    real, impostor = env.host_key("real"), env.host_key("impostor")
+    real_server, fake_server = env.start(real), env.start(impostor)
+
+    def known_hosts(port: int, key) -> Path:
+        path = tmp_path / f"known_hosts_{port}"
+        path.write_text(f"[127.0.0.1]:{port} {key.get_name()} {key.get_base64()}\n", encoding="ascii")
+        return path
+
+    # A stale entry for the real server does not block the pinned login ...
+    client = _client(paramiko, paramiko.RejectPolicy(), known_hosts(real_server.port, impostor))
+    try:
+        env.module.connect_vps(client, auth=env.auth([env.pin(real)]), port=real_server.port, warn=lambda _m: None)
+    finally:
+        client.close()
+    assert ("publickey", "root") in real_server.events
+    # ... and a planted entry for the impostor does not let it through.
+    client = _client(paramiko, paramiko.RejectPolicy(), known_hosts(fake_server.port, impostor))
+    with pytest.raises(env.module.HostKeyError):
+        env.module.connect_vps(client, auth=env.auth([env.pin(real)]), port=fake_server.port, warn=lambda _m: None)
+    assert fake_server.events == [("connection",)]
+
+
+def test_only_pinned_host_key_types_are_negotiated(ssh_server) -> None:
+    """The VPS has only an RSA host key; adding ed25519 later must not break the RSA pin."""
+    import paramiko
+
+    env = ssh_server
+    rsa = paramiko.RSAKey.generate(2048)
+    server = env.start(env.host_key("new-ed25519"), rsa)
+    client = _client(paramiko, paramiko.AutoAddPolicy())
+    try:
+        env.module.connect_vps(client, auth=env.auth([env.pin(rsa)]), port=server.port, warn=lambda _m: None)
+        assert client.get_transport().get_remote_server_key().get_name() == "ssh-rsa"
+    finally:
+        client.close()
+    assert ("publickey", "root") in server.events
+
+
+def test_server_without_the_pinned_key_type_is_refused_clearly(ssh_server) -> None:
+    import paramiko
+
+    env = ssh_server
+    server = env.start(env.host_key("ed25519-only"))
+    client = _client(paramiko, paramiko.AutoAddPolicy())
+    pinned_rsa = "ssh-rsa SHA256:" + "A" * 43
+    with pytest.raises(env.module.HostKeyError, match="none of the pinned SSH host key types"):
+        env.module.connect_vps(client, auth=env.auth([pinned_rsa]), port=server.port, warn=lambda _m: None)
+    assert server.events == [("connection",)]
+
+
+def test_empty_host_keys_keep_the_old_behaviour_with_a_warning(ssh_server) -> None:
+    import paramiko
+
+    env = ssh_server
+    server = env.start(env.host_key("unpinned"))
+    client = _client(paramiko, paramiko.AutoAddPolicy())
+    warnings: list[str] = []
+    try:
+        env.module.connect_vps(client, auth=env.auth([]), port=server.port, warn=warnings.append)
+    finally:
+        client.close()
+    assert server.events == [("connection",), ("publickey", "root")]
+    assert any("NOT verified" in warning for warning in warnings), warnings
+
+
+def test_raw_ssh_transports_in_vps_tools_check_the_pin() -> None:
+    for path in _ssh_scripts():
+        source = path.read_text(encoding="utf-8")
+        if "paramiko.Transport(" in source:
+            assert "check_host_key" in source and "host_key_algorithm_filter" in source, path.name
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows DPAPI only")

@@ -154,11 +154,20 @@ def run(client, command: str, timeout: int = 60) -> tuple[int, str]:
 def offered_auth_methods(host: str, user: str, timeout: float = 20) -> list[str]:
     """Ask sshd which methods it offers via the 'none' method; sends no credential."""
     import paramiko
+    from vps_credentials import (
+        check_host_key,
+        host_key_algorithm_filter,
+        parse_host_key_pins,
+        resolve_host_key_pins,
+    )
 
+    pins = parse_host_key_pins(resolve_host_key_pins())
     sock = socket.create_connection((host, 22), timeout=timeout)
-    transport = paramiko.Transport(sock)
+    transport = paramiko.Transport(sock, disabled_algorithms=host_key_algorithm_filter(pins) if pins else None)
     try:
         transport.start_client(timeout=timeout)
+        if pins:  # same pin as connect_vps: a foreign server must not answer for the VPS
+            check_host_key(transport.get_remote_server_key(), pins, host)
         try:
             transport.auth_none(user)
         except paramiko.BadAuthenticationType as exc:

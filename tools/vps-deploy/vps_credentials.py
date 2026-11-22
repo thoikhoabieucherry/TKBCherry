@@ -13,22 +13,34 @@ Login order (``connect_vps``):
 ``TKB_VPS_AUTH`` = ``auto`` (default: key, then password), ``key`` (key only)
 or ``password`` (password only).
 
+Host key: ``hostKeys`` in ``vps-config.json`` pins the VPS's public SSH host
+key fingerprints (``"ssh-rsa SHA256:..."``, same text as ``ssh-keygen -lf``).
+``connect_vps`` only negotiates the pinned key types and refuses any other
+server key during the handshake, BEFORE the SSH key or password is sent;
+known_hosts entries and the caller's host-key policy are ignored for that
+connection. ``TKB_VPS_HOST_KEYS`` (comma separated) replaces the pins, e.g. for
+a freshly installed server whose fingerprint was read on the provider console.
+An empty ``hostKeys`` list keeps the old unchecked behaviour with a warning.
+
 CLI: ``python vps_credentials.py status|path|save|delete|ssh-keygen|ssh-pubkey``.
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
 import ctypes
 import getpass
+import hashlib
 import json
 import os
+import re
 import secrets
 import sys
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 
 CONFIG_PATH = Path(__file__).with_name("vps-config.json")
@@ -39,16 +51,27 @@ SSH_KEY_PASSPHRASE_FILENAME = "vps-ssh-key-passphrase.dpapi"
 SSH_KEY_COMMENT = "tkbcherry-deploy"
 AUTH_MODES = ("auto", "key", "password")
 CRYPTPROTECT_UI_FORBIDDEN = 0x1
-DEFAULT_CONFIG = {
+HOST_KEYS_ENV = "TKB_VPS_HOST_KEYS"
+SSH_PORT = 22
+DEFAULT_CONFIG: dict[str, Any] = {
     "hostname": "TDC-260709270",
     "host": "165.101.47.133",
     "user": "root",
     "credentialStore": "windows-dpapi-current-user",
+    # Public host key fingerprint of the VPS (not a secret). 22/11/2026: the VPS has
+    # only RSA 3072 + DSA host keys (no ed25519/ecdsa); this one matches the
+    # ~/.ssh/known_hosts entry recorded on 21/08/2026 and `ssh-keygen -lf` on the VPS.
+    "hostKeys": ["ssh-rsa SHA256:4pb4SlSGGzrAAi0UpG9LTj6yetY7pmrNUVI9sZKaqwM"],
 }
+_HOST_KEY_PIN_RE = re.compile(r"((?:ssh|ecdsa|sk)-[A-Za-z0-9@.-]+)\s+(SHA256:[A-Za-z0-9+/]{43})")
 
 
 class CredentialError(RuntimeError):
     pass
+
+
+class HostKeyError(CredentialError):
+    """The server's SSH host key is not one of the pinned keys (possible man-in-the-middle)."""
 
 
 class _DataBlob(ctypes.Structure):
@@ -58,18 +81,120 @@ class _DataBlob(ctypes.Structure):
     ]
 
 
-def load_vps_config() -> dict[str, str]:
-    config = dict(DEFAULT_CONFIG)
+def load_vps_config() -> dict[str, Any]:
+    """Strings from ``vps-config.json`` over ``DEFAULT_CONFIG``; ``hostKeys`` is a list."""
+    config = {key: list(value) if isinstance(value, list) else value for key, value in DEFAULT_CONFIG.items()}
     try:
         value: Any = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):
         value = {}
     if isinstance(value, dict):
-        for key in DEFAULT_CONFIG:
+        for key, default in DEFAULT_CONFIG.items():
             candidate = value.get(key)
-            if isinstance(candidate, str) and candidate.strip():
+            if isinstance(default, list):
+                # A present list wins even when empty: that is the explicit opt-out.
+                if isinstance(candidate, list):
+                    config[key] = [item.strip() for item in candidate if isinstance(item, str) and item.strip()]
+            elif isinstance(candidate, str) and candidate.strip():
                 config[key] = candidate.strip()
     return config
+
+
+def resolve_host_key_pins() -> tuple[str, ...]:
+    """Pinned host key fingerprints: ``TKB_VPS_HOST_KEYS`` if set, else ``hostKeys``."""
+    environment = os.environ.get(HOST_KEYS_ENV, "").strip()
+    if environment:
+        return tuple(part.strip() for part in re.split(r"[,;\n]", environment) if part.strip())
+    return tuple(load_vps_config()["hostKeys"])
+
+
+def parse_host_key_pins(entries: Iterable[str]) -> frozenset[tuple[str, str]]:
+    """``"ssh-rsa SHA256:..."`` -> ``("ssh-rsa", "SHA256:...")``. A malformed pin fails closed."""
+    pins = set()
+    for entry in entries:
+        match = _HOST_KEY_PIN_RE.fullmatch(str(entry).strip())
+        if not match:
+            raise CredentialError(
+                f"Malformed SSH host key pin {entry!r} (hostKeys in {CONFIG_PATH.name} / {HOST_KEYS_ENV}); "
+                "expected '<key type> SHA256:<43 base64 chars>', e.g. the type and middle field of "
+                "`ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub`."
+            )
+        pins.add((match.group(1), match.group(2)))
+    return frozenset(pins)
+
+
+def host_key_fingerprint(key: Any) -> str:
+    """OpenSSH-style SHA256 fingerprint of a paramiko public key (as ``ssh-keygen -lf``)."""
+    digest = hashlib.sha256(key.asbytes()).digest()
+    return "SHA256:" + base64.b64encode(digest).decode("ascii").rstrip("=")
+
+
+def check_host_key(
+    key: Any, pins: frozenset[tuple[str, str]], hostname: str, *, before_auth: bool = True
+) -> None:
+    """Raise ``HostKeyError`` unless the server key ``key`` is one of ``pins``."""
+    presented = (key.get_name(), host_key_fingerprint(key))
+    if presented in pins:
+        return
+    expected = ", ".join(" ".join(pin) for pin in sorted(pins)) or "(none)"
+    stage = "no key or password was sent" if before_auth else "connection closed after login"
+    raise HostKeyError(
+        f"SSH host key of {hostname} is NOT the pinned one - refusing to log in (possible "
+        f"man-in-the-middle; {stage}). Server presented "
+        f"'{presented[0]} {presented[1]}', pinned: {expected}. If the VPS was reinstalled or its "
+        f"host key changed on purpose, read the new fingerprint on the provider's web console "
+        f"(`ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub`) and update hostKeys in {CONFIG_PATH.name}."
+    )
+
+
+def host_key_algorithm_filter(pins: frozenset[tuple[str, str]]) -> dict[str, list[str]] | None:
+    """``disabled_algorithms`` that leaves only the pinned host key types to negotiate.
+
+    paramiko otherwise prefers ed25519, so adding an ed25519 host key on the VPS
+    later would make every pinned login fail until the pin is updated.
+    """
+    import paramiko
+
+    allowed: set[str] = set()
+    for key_type, _fingerprint in pins:
+        allowed.add(key_type)
+        if key_type == "ssh-rsa":  # the key is named ssh-rsa; it signs with rsa-sha2-*
+            allowed.update(("rsa-sha2-512", "rsa-sha2-256"))
+    preferred = tuple(getattr(paramiko.Transport, "_preferred_keys", ()))
+    if not any(name in allowed for name in preferred):
+        return None  # never disable every algorithm; check_host_key still refuses
+    disabled = [name for name in preferred if name not in allowed]
+    return {"keys": disabled} if disabled else None
+
+
+class PinnedHostKeyPolicy:
+    """paramiko missing-host-key policy: accept only a pinned key.
+
+    paramiko calls it right after the key exchange and before authentication,
+    so a refused key means no credential ever leaves this machine.
+    """
+
+    def __init__(self, pins: frozenset[tuple[str, str]]):
+        self.pins = pins
+
+    def missing_host_key(self, client: Any, hostname: str, key: Any) -> None:
+        check_host_key(key, self.pins, hostname)
+
+
+def _forget_known_host(client: Any, host_label: str) -> None:
+    """Drop in-memory known_hosts entries for the VPS so the pin policy always runs."""
+    stores = [getattr(client, "_system_host_keys", None)]
+    get_host_keys = getattr(client, "get_host_keys", None)
+    if callable(get_host_keys):
+        stores.append(get_host_keys())
+    for store in stores:
+        if store is None:
+            continue
+        for _ in range(1000):  # HostKeys.__delitem__ removes one matching line per call
+            try:
+                del store[host_label]
+            except KeyError:
+                break
 
 
 def secrets_dir() -> Path:
@@ -258,6 +383,7 @@ class VpsAuth:
     key_path: Path | None
     key_passphrase: str
     mode: str = "auto"
+    host_keys: tuple[str, ...] = ()
 
     @property
     def ready(self) -> bool:
@@ -280,6 +406,7 @@ def resolve_vps_auth() -> VpsAuth:
         key_path=key if has_key else None,
         key_passphrase=resolve_ssh_key_passphrase() if has_key else "",
         mode=resolve_auth_mode(),
+        host_keys=resolve_host_key_pins(),
     )
 
 
@@ -329,17 +456,26 @@ def connect_vps(
     host: str | None = None,
     user: str | None = None,
     password: str | None = None,
+    port: int = SSH_PORT,
     timeout: float = 30,
     banner_timeout: float = 30,
     auth_timeout: float = 30,
     auth: VpsAuth | None = None,
+    host_keys: Iterable[str] | None = None,
     warn: Callable[[str], None] = _warn,
 ) -> Any:
     """Connect ``client`` (a ``paramiko.SSHClient``) to the VPS and return it.
 
     Tries the SSH key first; falls back to the password only in ``auto`` mode.
     ``password`` overrides the stored password (e.g. ``deploy.py --password``).
-    The caller keeps its own host-key policy; a new client gets AutoAddPolicy.
+
+    Host key: with pins (``host_keys``, else ``auth.host_keys`` = ``hostKeys`` /
+    ``TKB_VPS_HOST_KEYS``) the pin alone decides. The caller's missing-host-key
+    policy (AutoAddPolicy or RejectPolicy) and known_hosts entries for this host
+    are replaced for this connection, only the pinned key types are offered, and
+    a foreign key raises ``HostKeyError`` during the handshake, before the SSH key
+    or password is sent; there is no password fallback after it. Without pins the
+    caller's policy is kept (a new client gets AutoAddPolicy) and ``warn`` is told.
     """
     import paramiko
 
@@ -347,11 +483,14 @@ def connect_vps(
     host = host or auth.host
     user = user or auth.user
     password = password or auth.password
+    pins = parse_host_key_pins(auth.host_keys if host_keys is None else host_keys)
     if client is None:
         client = paramiko.SSHClient()
         client.load_system_host_keys()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    common = {
+    host_label = host if port == SSH_PORT else f"[{host}]:{port}"
+    common: dict[str, Any] = {
+        "port": port,
         "username": user,
         "timeout": timeout,
         "banner_timeout": banner_timeout,
@@ -359,6 +498,41 @@ def connect_vps(
         "look_for_keys": False,
         "allow_agent": False,
     }
+    if pins:
+        _forget_known_host(client, host_label)
+        client.set_missing_host_key_policy(PinnedHostKeyPolicy(pins))
+        disabled = host_key_algorithm_filter(pins)
+        if disabled:
+            common["disabled_algorithms"] = disabled
+    else:
+        warn(
+            f"[vps] No SSH host key pinned (hostKeys in {CONFIG_PATH.name} is empty): the server "
+            f"key of {host_label} is NOT verified, a man-in-the-middle would not be noticed."
+        )
+
+    incompatible_peer = getattr(paramiko.ssh_exception, "IncompatiblePeer", ())
+
+    def attempt(**credential: Any) -> None:
+        try:
+            client.connect(host, **credential, **common)
+            get_transport = getattr(client, "get_transport", None)
+            transport = get_transport() if pins and callable(get_transport) else None
+            if transport is not None:  # belt and braces: the policy already ran pre-auth
+                check_host_key(transport.get_remote_server_key(), pins, host_label, before_auth=False)
+        except HostKeyError:
+            client.close()
+            raise
+        except incompatible_peer as exc:
+            if not pins or "host key" not in str(exc):
+                raise
+            client.close()
+            types = ", ".join(sorted({key_type for key_type, _ in pins}))
+            raise HostKeyError(
+                f"{host_label} offers none of the pinned SSH host key types ({types}) - refusing to "
+                f"log in, no key or password was sent ({exc}). If its host keys changed on purpose, "
+                f"read the new fingerprint on the provider's web console and update hostKeys in "
+                f"{CONFIG_PATH.name}."
+            ) from exc
 
     if auth.mode != "password":
         if auth.key_path is None:
@@ -370,8 +544,10 @@ def connect_vps(
             failure: Exception
             try:
                 pkey = load_private_key(auth.key_path, auth.key_passphrase)
-                client.connect(host, pkey=pkey, **common)
+                attempt(pkey=pkey)
                 return client
+            except HostKeyError:
+                raise  # never fall back to the password on a foreign host key
             except paramiko.AuthenticationException as exc:
                 failure = exc
                 client.close()
@@ -383,7 +559,7 @@ def connect_vps(
 
     if not password:
         raise CredentialError(missing_credential_message())
-    client.connect(host, password=password, **common)
+    attempt(password=password)
     if auth.mode == "auto":
         warn(
             "[vps] Logged in with the root PASSWORD. Install the SSH key "
@@ -452,6 +628,7 @@ def main() -> int:
         )
         print(f"  key: {ssh_key_path()}")
         print(f"  password store: {path}")
+        print(f"  pinned host keys: {', '.join(auth.host_keys) or 'NONE (host key not verified)'}")
         return 0 if auth.ready else 1
     if args.action == "delete":
         path.unlink(missing_ok=True)

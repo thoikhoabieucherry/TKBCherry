@@ -121,6 +121,10 @@ python tools/vps-deploy/update-deploy.py
 `python tools/vps-deploy/ssh-key-auth.py install-key --apply --pubkey <file.pub>`. Bị khoá ngoài: console web
 của nhà cung cấp VPS → `rm /etc/ssh/sshd_config.d/00-tkb-keys-only.conf && systemctl reload ssh`
 (chi tiết `docs/PROJECT_HANDOFF.md` mục 21/11 tối).
+*Host key VPS được ghim (từ 22/11/2026):* `hostKeys` trong `tools/vps-deploy/vps-config.json`
+(`ssh-rsa SHA256:4pb4SlSG…`) — `connect_vps()` từ chối máy chủ có host key khác ngay lúc bắt tay, trước khi gửi
+khoá/mật khẩu. Cài lại VPS / đổi host key: đọc vân tay mới trên console nhà cung cấp
+(`ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub`) rồi sửa `hostKeys` (máy chủ mới tạm thời: biến `TKB_VPS_HOST_KEYS`).
 
 *Script sẽ tự động:*
 1. Nén các tệp mã nguồn mới (`web/`, `rust_api/`, `solver_runtime/`, `nginx/`).

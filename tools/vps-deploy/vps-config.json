@@ -2,5 +2,8 @@
   "hostname": "TDC-260709270",
   "host": "165.101.47.133",
   "user": "root",
-  "credentialStore": "windows-dpapi-current-user"
+  "credentialStore": "windows-dpapi-current-user",
+  "hostKeys": [
+    "ssh-rsa SHA256:4pb4SlSGGzrAAi0UpG9LTj6yetY7pmrNUVI9sZKaqwM"
+  ]
 }

@@ -9,6 +9,48 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-22 BẢO MẬT — ghim host key SSH của VPS: `connect_vps` từ chối máy chủ lạ TRƯỚC khi gửi khoá/mật khẩu
+
+- **Vân tay đã ghim**: `ssh-rsa SHA256:4pb4SlSGGzrAAi0UpG9LTj6yetY7pmrNUVI9sZKaqwM` (RSA 3072). VPS **không có host key
+  ed25519/ecdsa** — `/etc/ssh` chỉ có `ssh_host_rsa_key` + `ssh_host_dsa_key` (1024, OpenSSH 9.6 không dùng), cả hai tạo
+  2026-07-09 03:59 UTC (ngày cấp VPS, tên máy `TDC-260709270`; chú thích `root@localhost.localdomain`); `sshd -T` vẫn khai
+  `hostkey` ecdsa/ed25519 nhưng file không tồn tại. Cách lấy (CHỈ ĐỌC, không ghi gì lên VPS): (a) `~/.ssh/known_hosts` của máy
+  Windows có sẵn mục `165.101.47.133 ssh-rsa` ghi từ **21/08/2026** — mốc độc lập, có trước vụ dò quét; (b) một phiên
+  `connect_vps` mà host key RSA đã được kiểm với mục (a) TRƯỚC khi xác thực, chạy `ssh-keygen -lf /etc/ssh/ssh_host_*_key.pub`;
+  (c) bắt tay không xác thực (paramiko mặc định và ép chỉ RSA) — cả ba cùng một vân tay. Muốn chắc tuyệt đối: chủ dự án đọc
+  `ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub` trên console web nhà cung cấp và so.
+- **Mã** (`tools/vps-deploy/vps_credentials.py`): `hostKeys` (danh sách `"<loại> SHA256:<43 ký tự>"`, đúng chữ của
+  `ssh-keygen -lf`) ở `vps-config.json` + `DEFAULT_CONFIG` (dự phòng khi json hỏng); `VpsAuth.host_keys`;
+  `TKB_VPS_HOST_KEYS` (phẩy) thay pin, dùng khi cài máy chủ MỚI (`deploy.py --host`). Có pin thì `connect_vps()`:
+  xoá mục known_hosts của host trong bộ nhớ client, đặt `PinnedHostKeyPolicy` thay `AutoAddPolicy`/`RejectPolicy` của script
+  (paramiko gọi policy ngay sau trao đổi khoá, trước `_auth`), chỉ thương lượng loại host key đã ghim (`disabled_algorithms`
+  — paramiko vốn ưu tiên ed25519, nên nếu sau này thêm host key ed25519 trên VPS thì pin RSA vẫn chạy), sai thì
+  `HostKeyError` (con của `CredentialError`) nêu vân tay máy chủ đưa + vân tay đã ghim, đóng kết nối, **không** dự phòng mật
+  khẩu; máy chủ không có loại khoá đã ghim → cũng `HostKeyError` (thay vì `IncompatiblePeer` khó hiểu). Sau khi đăng nhập còn
+  kiểm lại khoá của transport (phòng hờ). Pin sai cú pháp → `CredentialError` trước khi mở kết nối (không âm thầm bỏ ghim).
+  `"hostKeys": []` = cố ý tắt: giữ hành vi cũ + cảnh báo `[vps] No SSH host key pinned`. `vps_credentials.py status` in pin.
+  `ssh-key-auth.py::offered_auth_methods` (thăm dò `none`, Transport thô) dùng cùng pin. Không sửa 17 script gọi
+  `connect_vps` — các dòng `AutoAddPolicy` trong đó nay bị `connect_vps` thay thế.
+- **Kiểm thử**: `tests/test_vps_credentials.py` 28 test (+10): máy chủ SSH paramiko thật chạy trong tiến trình (127.0.0.1)
+  ghi lại mọi lần xác thực — pin khớp → đăng nhập khoá; host key lạ → `HostKeyError`, máy chủ chỉ thấy 1 kết nối, KHÔNG nhận
+  publickey/password; known_hosts cũ/cài sẵn không thắng pin (kiểu `deploy.py`/`diagnose.py`: known_hosts + RejectPolicy);
+  máy chủ có thêm ed25519 vẫn thương lượng RSA đã ghim; máy chủ thiếu loại đã ghim; `hostKeys: []` → cảnh báo; env/cú pháp;
+  quét tĩnh mọi `paramiko.Transport(` trong tools phải kiểm pin. Đột biến (bỏ xoá known_hosts / bỏ lọc thuật toán / policy
+  nhận tất / dự phòng mật khẩu khi sai host key) đều bị ít nhất 1 test bắt. `python -m pytest tests/test_vps_credentials.py
+  tests/test_ssh_key_auth.py tests/test_vps_deploy_packaging.py -q` → 54 passed. `python run_tests.py --group py-infra`:
+  lần 1 `test_ssh_key_auth` FAIL, lần 2 (`-v`) 4/4 pass, 6 lần pytest riêng đều 10/10 — đúng lỗi chập chờn đã ghi 21/11, không do
+  thay đổi này (test đó không gọi `offered_auth_methods`). Manh mối mới: một lần pytest báo INTERNALERROR `PermissionError` khi
+  xoá `archived_logs/logs_<epoch>` ở gốc worktree — thư mục chỉ chứa `desktop.ini` (trình đồng bộ thư mục Documents tự thả
+  `desktop.ini` khắp nơi, kể cả `tests/`); không file nào trong repo tạo `archived_logs/`, nghi plugin/tiến trình ngoài.
+- **Kiểm trên VPS thật (chỉ đọc, script tạm ngoài repo)**: client `AutoAddPolicy` (như `block-ip-nginx.py`) và client
+  known_hosts + `RejectPolicy` (như `deploy.py`/`diagnose.py`) đều đăng nhập được, khoá máy chủ = pin, `hostname` =
+  `TDC-260709270`; `offered_auth_methods` → `['publickey']`; pin RSA sai và pin chỉ-ed25519 → `HostKeyError`, transport
+  `None`. **Chưa chạy** `python tools/vps-deploy/block-ip-nginx.py 143.246.203.109` (chế độ xem): trình kiểm quyền của phiên
+  Claude chặn script trong `tools/vps-deploy/` — chủ dự án chạy lệnh đó để chốt.
+- **Còn mở**: (1) cân nhắc tạo host key ed25519 trên VPS (`ssh-keygen -A` tạo các khoá còn thiếu, rồi `systemctl reload ssh`;
+  GHI lên VPS → cần chủ dự án duyệt) rồi thêm vân tay ed25519 vào `hostKeys`; nhờ lọc thuật toán, pin RSA hiện tại không hỏng
+  khi làm việc đó. (2) `limit_req` nginx cho `/api/auth/*` (như cũ).
+
 ## 2026-11-21 (tối) BẢO MẬT — SSH root chuyển sang khoá ed25519, VPS TỪ CHỐI mật khẩu
 
 - **Trạng thái VPS (ĐÃ ÁP ~16:25 UTC, chủ dự án duyệt trong chat)**: `/root/.ssh/authorized_keys` có đúng 1 khoá
@@ -58,8 +100,8 @@
   `e2e_tests/`, `deploy.ps1`. `test_ssh_key_auth` FAIL **một lần** trong lượt đầy đủ đó nhưng không tái hiện (5 lần pytest +
   2 lần `run_tests.py --group py-infra` đều qua) — nghi Git Bash chậm/lỗi fork khi máy tải nặng; gặp lại thì chạy
   `run_tests.py --group py-infra -v` để có chi tiết.
-- **Còn mở**: (1) host key VPS chưa được ghim — đa số script dùng `AutoAddPolicy` (nay khoá công khai không lộ credential qua
-  MITM như mật khẩu, nhưng nên ghim vân tay host key vào `vps-config.json`); (2) `limit_req` nginx cho `/api/auth/*` (như cũ).
+- **Còn mở**: (1) ~~host key VPS chưa được ghim — đa số script dùng `AutoAddPolicy`~~ **XONG 22/11** — `hostKeys` trong
+  `vps-config.json`, xem mục "2026-11-22" ở trên; (2) `limit_req` nginx cho `/api/auth/*` (như cũ).
 
 ## 2026-11-21 BẢO MẬT — máy quét lỗ hổng 143.246.203.109 + SSH bị dò mật khẩu: chặn IP ở nginx, cài fail2ban
 
