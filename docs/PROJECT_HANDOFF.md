@@ -9,6 +9,31 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-24 TRANG /huong-dan + VIDEO HƯỚNG DẪN 9 BƯỚC TRÊN tkbcherry.com — ĐÃ DEPLOY
+
+- **Chủ dự án**: "dựa vào các TKB đã xếp tạo video hướng dẫn thật chi tiết… ví dụ Chi Lăng", rồi "up lên trang chủ hoặc chỗ nào gọi là hướng dẫn cho thầy cô xem".
+- **Video** 12'41", 1920×1080, giọng đọc `vi-VN-HoaiMyNeural` + phụ đề, quay từ app thật chạy trên máy (Chi Lăng TKB 2, tên GV/trung tâm giả, trường hiện là
+  "THCS Mẫu"; bỏ 8 ô nghỉ của một GV Tin để nút Cherry xếp đủ 1339/1339). Dựng tự động trong `scratch/video_huongdan/` (gitignored: Playwright chụp + edge-tts +
+  ffmpeg; sửa lời trong `scenes_*.json` rồi `build.py` chỉ dựng lại đoạn đổi). Giọng đọc CHƯA được nghe lại bằng tai.
+- **Trang mới `web/huong-dan/index.html`** (`/huong-dan`): dùng `about/about.css` + `<style>` riêng (`hd-*`), trình phát `<video>` + mục lục 11 mốc bấm để nhảy
+  (`data-t` giây, tô mốc đang phát), tóm tắt 4 việc, lời mời đăng nhập. Ảnh bìa `web/assets/huong-dan/poster.jpg`. Mốc thời gian chép từ
+  `scratch/video_huongdan/out/muc-luc.txt` — dựng lại video làm lệch mốc thì sửa `data-t` + `<time>`.
+- **Trang chủ `web/index.html`**: menu thêm "Hướng dẫn"; nút "Xem video hướng dẫn" ở hero (menu ẩn dưới 860 px nên điện thoại cần nút này), nút dưới 4 bước
+  "Cách bắt đầu", link chân trang. `web/sitemap.xml` thêm `/huong-dan`.
+- **Video do NGINX phục vụ, không nằm trong git**: Rust `is_public_static_file` không nhận `.mp4` và không có HTTP Range (iPhone không phát/tua được). Công cụ mới
+  `tools/vps-deploy/install-public-media-nginx.py [--apply] [file.mp4…]` (mẫu theo `install-public-seo-nginx.py`): tải file vào
+  `/var/www/tkbcherry-public/media/`, chèn khối `TKB_PUBLIC_MEDIA_BEGIN/END` (`location ^~ /media/`, chỉ type mp4, cache 1 ngày) trước `location /`, sao lưu,
+  `nginx -t`, reload. File đang chạy: `/media/huong-dan-xep-tkb.mp4` (23,2 MB, faststart, âm thanh mono 80k; nguồn `scratch/huongdan-deploy/`). Thay video = chạy
+  lại công cụ với file cùng tên, rồi đổi `?v=` trong trang (cache 1 ngày).
+- **Deploy 24/11 ~00:50** (Claude chạy, khoá SSH qua `connect_vps` của worktree `claude/ssh-host-key-pin` vì nhánh này chưa có; runner `scratch/huongdan-deploy/
+  nginx_media.py` + `run.py`): nginx backup `/root/tkb-backups/nginx-public-media-20261124-005017/`; web backup `/root/tkb-backups/huongdan-20261124/`
+  (index.html + sitemap cũ), không restart. Preflight: index/sitemap trên VPS = HEAD. Sau deploy sha khớp (index `fd51ab0799a8fdde`, huong-dan `790174baecf7cc56`).
+  Gỡ: `install-public-media-nginx.py --remove --apply` + trả `web/index.html`, `web/sitemap.xml` từ backup, xoá `web/huong-dan/`.
+- **Kiểm live** (Playwright Chromium 1366×768 và 390×844): từ trang chủ bấm link → `/huong-dan`, không tràn ngang, 0 lỗi JS, bấm "Bước 8" video nhảy tới 08:00 và
+  phát; `/media/…mp4` trả 206 + `Content-Range`; `/media/` 404; thẻ đăng nhập trang chủ đổi tab bình thường; `/api/health` 200. CHƯA thử trên iPhone/Android thật.
+- **Test** `run_tests.py`: 7 [MOI HONG] không do việc này — 6 bộ planner vì `web/pages/phanmon.js` ở cây chính là CRLF (đã ghi 02/11), và
+  `py-solver/test_engine_v3_cpsat_lns` trượt ngưỡng thời gian (3,08 s > 2,0 s, chạy riêng vẫn vậy trên máy này). Thay đổi chỉ gồm HTML, sitemap và công cụ nginx.
+
 ## 2026-11-23 THCS Quang Trung TKB 6 (sid obo2ow4q6d6) — cô Chung/thầy Tài nghỉ T2, hết ngày 8 tiết chính khoá — ĐÃ GHI vào kho
 
 - TKB 6 = bản sao y hệt TKB 5 (chỉ khác `meta`, effectiveDate 2026-11-30). Trường xin: (1) CN.Chung (Điêu Thị Thủy Chung) nghỉ

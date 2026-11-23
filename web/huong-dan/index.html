@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hướng dẫn xếp thời khóa biểu — Cherry Scheduler</title>
+  <meta name="description" content="Video hướng dẫn từng bước xếp thời khóa biểu bằng Cherry Scheduler: nhập khối, lớp, giáo viên, môn học, phân công, đặt yêu cầu, xếp tự động, chỉnh tay và in." />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://tkbcherry.com/huong-dan" />
+  <meta property="og:type" content="video.other" />
+  <meta property="og:site_name" content="Cherry Scheduler" />
+  <meta property="og:title" content="Hướng dẫn xếp thời khóa biểu — Cherry Scheduler" />
+  <meta property="og:description" content="Video 13 phút: từ nhập dữ liệu đến thời khóa biểu hoàn chỉnh, qua 9 bước." />
+  <meta property="og:url" content="https://tkbcherry.com/huong-dan" />
+  <meta property="og:image" content="https://tkbcherry.com/assets/huong-dan/poster.jpg" />
+  <meta property="og:locale" content="vi_VN" />
+  <link rel="icon" type="image/png" href="/assets/favicon-cherry.png?v=2" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&amp;display=swap" />
+  <link rel="stylesheet" href="/about/about.css?v=20261108-home-v1" />
+  <style>
+    .hd-hero { padding: 40px 0 8px; }
+    .hd-hero h1 { margin: 6px 0 10px; font-size: clamp(1.7rem, 3.4vw, 2.4rem); line-height: 1.2; font-weight: 800; color: #0f172a; }
+    .hd-hero p { margin: 0; max-width: 62ch; color: #475569; font-size: 1.02rem; line-height: 1.65; }
+    .hd-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; align-items: start; padding-top: 28px; padding-bottom: 56px; }
+    .hd-player { background: #0b1220; border-radius: 14px; overflow: hidden; box-shadow: 0 18px 40px rgba(15, 23, 42, .18); }
+    .hd-player video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; background: #0b1220; }
+    .hd-note { margin: 14px 2px 0; color: #64748b; font-size: .92rem; line-height: 1.6; }
+    .hd-note a { color: #be123c; font-weight: 600; }
+    .hd-chapters { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 14px 12px; }
+    .hd-chapters h2 { margin: 0 6px 10px; font-size: 1.05rem; font-weight: 700; color: #0f172a; }
+    .hd-chapters ol { list-style: none; margin: 0; padding: 0; }
+    .hd-chapter { display: flex; gap: 12px; align-items: baseline; width: 100%; padding: 9px 8px; border: 0; border-radius: 8px; background: none; font: inherit; font-size: .95rem; color: #1e293b; text-align: left; cursor: pointer; }
+    .hd-chapter:hover, .hd-chapter:focus-visible { background: #fff1f2; outline: none; }
+    .hd-chapter[aria-current="true"] { background: #ffe4e6; font-weight: 600; }
+    .hd-chapter time { flex: none; min-width: 3.2em; font-variant-numeric: tabular-nums; color: #be123c; font-weight: 600; }
+    .hd-steps-title { margin-top: 0; }
+    @media (max-width: 900px) {
+      .hd-layout { grid-template-columns: minmax(0, 1fr); gap: 20px; padding-bottom: 40px; }
+      .hd-hero { padding-top: 28px; }
+    }
+  </style>
+</head>
+<body class="ab-page">
+  <a class="ab-skip" href="#noi-dung">Bỏ qua menu</a>
+
+  <div class="ab-topbar">
+    <div class="ab-container">
+      <div class="ab-topbar-contact">
+        <span>Điện thoại / Zalo: <a href="tel:+84352261815">0352 261 815</a></span>
+        <a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a>
+      </div>
+      <span class="ab-topbar-note">Hỗ trợ nhập dữ liệu cho trường mới</span>
+    </div>
+  </div>
+
+  <header class="ab-nav">
+    <div class="ab-container">
+      <a class="ab-brand" href="/">
+        <img src="/assets/cherry-scheduler-logo.png?v=2" width="34" height="34" alt="" />
+        <span>Cherry Scheduler</span>
+      </a>
+      <nav class="ab-nav-links" aria-label="Mục trên trang">
+        <a href="/#tinh-nang">Tính năng</a>
+        <a href="/#phan-mem">Phần mềm</a>
+        <a href="/huong-dan" aria-current="page">Hướng dẫn</a>
+        <a href="/#ve-chung-toi">Về chúng tôi</a>
+        <a href="/#lien-he">Liên hệ</a>
+      </nav>
+      <a class="ab-btn ab-btn-primary ab-btn-sm" href="/#authCard">Đăng nhập</a>
+    </div>
+  </header>
+
+  <main id="noi-dung">
+    <section class="hd-hero">
+      <div class="ab-container">
+        <p class="ab-kicker">Hướng dẫn sử dụng</p>
+        <h1>Xếp thời khóa biểu từ đầu đến cuối trong 9 bước</h1>
+        <p>Video gần 13 phút, quay trên chính phần mềm, đi từ lúc đăng nhập và nhập dữ liệu cho đến khi có thời khóa biểu hoàn chỉnh để in. Trường ví dụ là một trường THCS học hai buổi, 37 lớp, khoảng 100 giáo viên; tên giáo viên trong video là tên mẫu.</p>
+      </div>
+    </section>
+
+    <div class="ab-container hd-layout">
+      <div>
+        <div class="hd-player">
+          <video id="hdVideo" controls playsinline preload="metadata" poster="/assets/huong-dan/poster.jpg?v=20261124">
+            <source src="/media/huong-dan-xep-tkb.mp4?v=20261124" type="video/mp4" />
+            Trình duyệt của thầy cô không phát được video. Thầy cô có thể <a href="/media/huong-dan-xep-tkb.mp4?v=20261124">tải video về máy</a>.
+          </video>
+        </div>
+        <p class="hd-note">Video có giọng đọc và phụ đề tiếng Việt. Bấm vào một mục ở danh sách bên cạnh để nhảy tới bước cần xem. Cần hỗ trợ thêm, thầy cô gọi hoặc nhắn Zalo <a href="https://zalo.me/0352261815" target="_blank" rel="noopener">0352 261 815</a>.</p>
+      </div>
+
+      <aside class="hd-chapters" aria-label="Các bước trong video">
+        <h2>Nội dung video</h2>
+        <ol id="hdChapters">
+          <li><button type="button" class="hd-chapter" data-t="0"><time>00:00</time><span>Giới thiệu</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="31"><time>00:31</time><span>Bước 1 · Đăng nhập</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="61"><time>01:01</time><span>Bước 2 · Khối và Lớp</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="131"><time>02:11</time><span>Bước 3 · Giáo viên</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="179"><time>02:59</time><span>Bước 4 · Môn học và Tiết chuẩn</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="227"><time>03:47</time><span>Bước 5 · Phân công</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="289"><time>04:49</time><span>Bước 6 · Dạy ghép</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="323"><time>05:23</time><span>Bước 7 · Yêu cầu</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="480"><time>08:00</time><span>Bước 8 · Xếp tự động</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="661"><time>11:01</time><span>Bước 9 · Chỉnh tay, kiểm tra, in</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="742"><time>12:22</time><span>Tổng kết</span></button></li>
+        </ol>
+      </aside>
+    </div>
+
+    <section class="ab-section ab-section--soft">
+      <div class="ab-container">
+        <div class="ab-head">
+          <p class="ab-kicker">Tóm tắt</p>
+          <h2 class="hd-steps-title">Thứ tự làm việc trong phần mềm</h2>
+        </div>
+        <ol class="ab-steps">
+          <li>
+            <h3>Nhập dữ liệu</h3>
+            <p>Nhập lần lượt Khối học, Lớp học, Giáo viên, Môn học, Tiết chuẩn, Phân công và Dạy ghép. Bảng nào cũng có Nhập Excel và Xuất Excel.</p>
+          </li>
+          <li>
+            <h3>Đặt yêu cầu</h3>
+            <p>Ở trang Sắp xếp, mở menu Yêu cầu để đánh dấu ô nghỉ, tiết cố định và các yêu cầu của giáo viên, môn học.</p>
+          </li>
+          <li>
+            <h3>Xếp tự động</h3>
+            <p>Bấm Cherry để xếp. Bấm lại Cherry hoặc dùng menu Tối ưu để giảm buổi dạy và tiết trống của giáo viên.</p>
+          </li>
+          <li>
+            <h3>Chỉnh, kiểm tra và in</h3>
+            <p>Kéo-thả để đổi chỗ tiết, xem bảng Thống kê, rồi vào In TKB để xuất Excel cho lớp, giáo viên và toàn trường.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="ab-cta">
+      <div class="ab-container">
+        <h2>Sẵn sàng xếp thời khóa biểu của trường?</h2>
+        <div class="ab-cta-row">
+          <a class="ab-btn ab-btn-primary" href="/#authCard">Đăng nhập hoặc đăng ký</a>
+          <a class="ab-btn ab-btn-ghost" href="https://zalo.me/0352261815" target="_blank" rel="noopener">Nhắn Zalo hỗ trợ</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="ab-footer">
+    <div class="ab-container">
+      <div class="ab-footer-grid">
+        <div>
+          <a class="ab-brand" href="/">
+            <img src="/assets/cherry-scheduler-logo.png?v=2" width="34" height="34" alt="" />
+            <span>Cherry Scheduler</span>
+          </a>
+          <p>Phần mềm xếp thời khóa biểu tự động cho trường tiểu học, THCS và trung tâm GDNN-GDTX. Xếp nhanh, chuẩn xác – Nhàn hơn mỗi ngày.</p>
+        </div>
+        <div>
+          <h2>Liên kết</h2>
+          <ul>
+            <li><a href="/">Trang chủ</a></li>
+            <li><a href="/huong-dan">Hướng dẫn sử dụng</a></li>
+            <li><a href="/privacy">Chính sách bảo mật</a></li>
+            <li><a href="/terms">Điều khoản sử dụng</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2>Liên hệ</h2>
+          <ul>
+            <li>424 đường Nhuận Đức, xã Nhuận Đức, TP. Hồ Chí Minh</li>
+            <li>Điện thoại: <a href="tel:+84352261815">0352 261 815</a> · <a href="https://zalo.me/0352261815" target="_blank" rel="noopener">Zalo</a></li>
+            <li>Email: <a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="ab-footer-bottom">© 2026 Cherry Scheduler · Cherry Software</div>
+    </div>
+  </footer>
+
+  <script>
+  (function(){
+    var video = document.getElementById("hdVideo");
+    var buttons = Array.prototype.slice.call(document.querySelectorAll("#hdChapters .hd-chapter"));
+    if(!video || !buttons.length) return;
+    var starts = buttons.map(function(b){ return Number(b.getAttribute("data-t")) || 0; });
+    function mark(){
+      var t = video.currentTime || 0, idx = 0;
+      for(var i = 0; i < starts.length; i++){ if(t + 0.25 >= starts[i]) idx = i; }
+      buttons.forEach(function(b, i){
+        if(i === idx) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
+      });
+    }
+    buttons.forEach(function(b, i){
+      b.addEventListener("click", function(){
+        function go(){
+          video.currentTime = starts[i];
+          var p = video.play();
+          if(p && typeof p.catch === "function") p.catch(function(){});
+          mark();
+        }
+        if(video.readyState >= 1) go();
+        else { video.addEventListener("loadedmetadata", go, { once: true }); video.load(); }
+        if(window.matchMedia && window.matchMedia("(max-width: 900px)").matches){
+          video.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      });
+    });
+    video.addEventListener("timeupdate", mark);
+    video.addEventListener("seeked", mark);
+  })();
+  </script>
+</body>
+</html>
