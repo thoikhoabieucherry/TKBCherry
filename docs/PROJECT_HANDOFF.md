@@ -9,6 +9,35 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-23 THCS Quang Trung TKB 6 (sid obo2ow4q6d6) — cô Chung/thầy Tài nghỉ T2, hết ngày 8 tiết chính khoá — ĐÃ GHI vào kho
+
+- TKB 6 = bản sao y hệt TKB 5 (chỉ khác `meta`, effectiveDate 2026-11-30). Trường xin: (1) CN.Chung (Điêu Thị Thủy Chung) nghỉ
+  trọn T2, tránh "T4 buổi chiều" vì nhà ở Củ Chi; (2) TC.Tài dồn tiết chiều T2 qua T4, nghỉ T2; (3) 7/2, 7/4, 8/2, 9/1 "học chính khoá
+  8 tiết/ngày là sai quy định".
+- **Cách trường đếm (khớp đúng 4 lớp trường nêu, đã thử mọi cách phân loại môn):** tiết "học" trong ngày = MỌI tiết buổi sáng (kể cả
+  TCTA/AI ở sáng) + tiết chính khoá buổi chiều; ≤ 7. Vì sáng luôn 4 tiết ⇒ buổi chiều 4 tiết phải có môn ngoài chính khoá
+  (AVNN/IC3/KNS/STEM/TCTA/TS10/AI) ở tiết 4. 4 ngày vi phạm cũ đều do CN/MT ở tiết 4 chiều (ô "môn nhẹ" mở từ TKB 4 lần 2).
+  Luật cũ `--ck7` (TKB 5) coi AI/TCTA ở sáng là ngoài chính khoá nên chỉ thấy 1 ngày — sai so với cách trường đếm.
+- **Ghi vào kho:** `fixedOff.subject` đóng lại CN T2, MT T3, MT T4 tiết 4 chiều (giờ mọi môn chính khoá cấm tiết 4 chiều ⇒ RB/Cherry tự
+  giữ luật ≤7); `fixedOff.teacher` CN.Chung nghỉ trọn T2 + chiều T4 (làm cả 2 nghĩa của "T4 buổi chiều": thứ Tư chiều, và tiết 4 chiều
+  — CN đã bị cấm tiết 4); TC.Tài thêm nghỉ chiều T2. `CN.Chung maxDays 2` giữ nguyên.
+- **Bất khả đã chứng minh (`cap6.py` + mô hình đầy đủ):** 52 buổi chiều 4 tiết/tuần (T2 16 lớp, T3 13, T4 13, T5 7, T6 3) nhưng GV
+  ngoài chính khoá rảnh cùng lúc chỉ lấp tối đa 49 (thiếu T2, T3: tổ Toán nghỉ CM T3 nên không có TS10; TO.Phương nghỉ chiều tiết 3–5).
+  Cho TO.Phương dạy tiết 3–4 chiều vẫn vô nghiệm; luật 6A2–6A4 (`--pair64`) + ghim tiết 4 thì kể cả thêm GV cũng phải dời ≥4 ghim.
+  **Chủ dự án chốt (hỏi trong phiên): thêm GV liên kết, chuyển 4 lớp** — KNS 7A1, 9A1 → `KNS 3`; STEM 7A1, 8A2 → `STEM 3` (2 mã có sẵn
+  trong danh sách GV, trước 0 tiết). Đánh đổi: KNS 3/STEM 3 mỗi người 2 buổi 1 tiết (muốn 0 buổi 1 tiết phải chuyển ≥8 lớp).
+- **Kết quả ĐÃ GHI 23/11 19:52** (`_updatedAt` 1795438374931, sao lưu kho trước `scratch/qt6/backup_obo2ow4q6d6_20261123-195254_truoc-ghi.json`
+  = `live6_0.json`, kéo lại `live6_after.json` khớp 100%): 749/749, `verify6.py` 0 lỗi, RB Node 0; 0 ngày > 7 tiết; GV trường 236→235 buổi,
+  0 buổi 1 tiết, trống 24→16, 0 trống 2; GV liên kết 36→39 buổi, 4 buổi 1 tiết (KNS 3/STEM 3); tối đa 8 tiết/ngày. CN.Chung dạy T3 (sáng 4 +
+  chiều 3) + chiều T6; TC.Tài nghỉ trọn T2, thêm chiều T4. Dời 5 ghim tiết 4 chiều (6A1 TCTA T3, 7A2 TCTA T5, 7A3 KNS T2, 7A3 IC3 T5,
+  7A4 KNS T5; KNS 7A3/7A4 ghim lại ở tiết 4 ngày mới). 518 ô đổi ở 20 lớp (chạy `--wmove 0` cho gọn buổi; `--wmove 1` giữ ~290 ô nhưng 279 buổi).
+- Công cụ `scratch/qt6/`: `mk_rules6.py` (luật mới → `rules6.json`), `solve_qt6.py` (= solve_qt5 + `--ck7m`, `--pool/--poolfix/--singleok`,
+  `--pinpen` giữ cứng HĐTN 1/2, `--maxdrop/--maxpool`, `--minonly`, `--fixfrom/--free` cho LNS, `--movefrom`, `--seed`), `cap6.py` (mô hình
+  nhỏ tiết 4 chiều), `lns6.py`, `final6.py` (dựng kho + đổi pccm + ghim lại), `verify6.py`, `apply6.py` (connect_vps, so băm, `--write`),
+  `pull.py`, `rb_check.js`. Quy trình hiệu quả: CP-SAT toàn trường 25′ (279–282 buổi) → LNS 6 lớp kẹt ở 279 → toàn trường `--wmove 0` có
+  gợi ý 20′ + 15′ → 274.
+- Luật "liên kết cuối buổi", "6A2–6A4" vẫn chỉ có trong mô hình (bấm Cherry trên web có thể phá). Không chạy `run_tests.py`: phiên này chỉ đổi tài liệu.
+
 ## 2026-11-22 THCS Hồ Văn Long PHÂN HIỆU TKB 7 (sid g1eegcr1ww7) — ghép lớp tiết liên kết, K9 nghỉ T7, ≤8 phòng chiều K9 — ĐÃ GHI vào kho
 
 - Yêu cầu trường (chủ dự án dán) + `phancong/hovanlong/moi/` (PHAN_LOP K8 v4, K9 phương án B, sơ đồ trường PDF): K9 xếp lại buổi chiều
