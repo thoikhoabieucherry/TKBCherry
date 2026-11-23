@@ -51,6 +51,22 @@
 - `run_tests.py` 22/11: 7 test báo "mới hỏng" (6 js-e2e đọc `web/pages/phanmon.js`, vd. không tìm thấy kết thúc `tkbAdoptRemoteData`,
   + `test_engine_v3_edge_pair_rule`) — có sẵn trên nhánh, không do thay đổi tài liệu này; chưa điều tra.
 
+## 2026-11-23 THCS Hồ Văn Long (Chính) TKB 7 — LẦN 3: chia nhóm liên kết theo thống kê HS từng lớp, lớp ít HS học ghép — ĐÃ GHI vào kho
+
+- Nguồn: `phancong/hovanlongchinh/moi3/THỐNG KÊ SỐ LƯỢNG HS HỌC MÔN HỌC THEO NHU CẦU (Câu trả lời).xlsx` (số HS TATC/TABN/Tin QT/STEM theo lớp chủ nhiệm):
+  lớp nào cũng có HS học liên kết (kể cả 6/7, 7/8, 8/6–8/8, 9/5–9/11 mà lần 2 không có tiết LK), 9/1–9/4 và 8/1 rất ít. Chủ dự án chọn
+  **"ghép lớp ít HS"**: lớp có HS thì có tiết LK trong TKB lớp đó; lớp ít HS học ghép cùng giờ (dòng Dạy ghép nhiều lớp, `ten "<môn>-<lớp>+<lớp>"`).
+- Nhóm (`scratch/hvl7/build9.py`): TATC+TABN 23 nhóm — K6 mỗi lớp (6/7 → TA.Vương), K7: 7/3+7/4 (TA.Hảo), 7/8 (TA.Ni), K8: 8/1+8/7 (TA.Vương), 8/4+8/6 (TA.Mỹ),
+  8/8 (TA.Hảo — không giao TA.Mỹ vì cô chỉ dạy chiều, 18 tiết/19 ô), K9: 9/10 (TA.Quỳnh), 9/6+9/7 (TA.Vũ2), 7 lớp 9/1–9/5+9/9+9/11 (TA.Nghi); TA.My hết TATC.
+  Tin QT: K6/K7 mỗi lớp, K8 8/1+8/7 và từng lớp 8/2–8/6, 8/8. STEM: K6 mỗi lớp; 7/1+7/2, 7/3+7/4, 7/5+7/8, 7/6, 7/7; 8/2, 8/3, 8/5, 8/4+8/6, 8/1+8/7+8/8; 9/5+9/6+9/7+9/11.
+  9/8, 9/12 không có LK. Bỏ điều kiện tự đặt "2 lớp STEM không cùng giờ" (file chỉ ghi mỗi buổi 2 GV STEM, không trùng nhau).
+- Gốc = kho sống 23/11 17:26 (chủ dự án đã tự bỏ `Tự học (ghép)` K9, dời vài ô 6/7, gỡ GDCD 7/3): giữ nguyên các sửa đó.
+- Kết quả đã ghi (`_updatedAt` 1795435387169, `final12.json` = `live_f12.json`): 1253 tiết-lớp, RB Node 0, 0 tiết vào ô nghỉ GV, lớp nào cũng đủ 10 buổi ≥2 tiết;
+  GV 427 buổi / 1 buổi 1 tiết / 36 trống 1 / 0 trống 2. CÒN: buổi sáng 3 tiết ở K9 (9/1–9/4, 9/9 mỗi lớp 2 buổi; 9/5, 9/11, 9/8, 9/12 1 buổi) và 7/4 một buổi sáng 2 tiết —
+  K9 bỏ Tự học nên chỉ còn 29 tiết CK: 9 tiết CK buổi chiều < 10 cần (mỗi chiều ≥2 tiết, LK sau 2 tiết CK) ⇒ ≥1 buổi sáng 3 tiết/lớp là bắt buộc; buổi thứ 2 chưa gỡ được.
+- Công cụ mới: `h4lib.py` (dòng ghép nhiều lớp không tính trùng GV: `S.joint`, `S.jcls`), `h9_lns.py` (ghim dòng ghép khi không mở đủ lớp; `P_CLOSE` mở cả nhóm ghép),
+  `h9_finalize.py`, `export8.py` (cột "ghép"). Excel: `phancong/hovanlongchinh/moi3/TKB LIEN KET - TKB7 lan 3 (23-11-2026).xlsx`.
+
 ## 2026-11-22 (tối) THCS Hồ Văn Long (Chính) TKB 7 — LẦN 2: làm lại môn liên kết theo đúng file, ngày nghỉ GV = TKB 6 — ĐÃ GHI vào kho
 
 - Chủ dự án bác bản ghi 11:43 (mục dưới): "phân công liên kết bị sai". Làm lại: phân công LK theo ĐÚNG `moi2/21.11-...xlsx`
