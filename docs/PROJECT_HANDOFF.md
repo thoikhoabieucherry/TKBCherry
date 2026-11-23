@@ -9,6 +9,31 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-24 THCS Hồ Văn Long (Chính) TKB 7 — LẦN 4: nhóm ghép theo THỐNG KÊ-L2 + PCCM 23/11, khung chiều mới, tiết ghép cuối buổi — ĐÃ GHI vào kho
+
+Chủ dự án thêm 2 file vào `phancong/hovanlongchinh/moi3` (`THỐNG KÊ...-L2.xlsx` có cột "XẾP LỚP" ghi rõ lớp nào ghép lớp nào;
+`21.11-...PHAN CONG...xlsx` bản 23/11 23:59 đổi GV TATC/TABN, Tin QT, STEM) + dặn trong chat (24/11):
+**sáng học full; chiều T2–T4 tới tiết 4, T5–T6 tới tiết 3; lớp chỉ 29 tiết được nghỉ 1 buổi; tiết GHÉP nằm cuối buổi chiều, trước đó
+phải có tiết chính khoá (ai không học thì về); các lớp cùng khối, số tiết gần nhau thì ra về giống nhau.**
+
+- Nhóm (xem `scratch/hvl7/build10.py`): K6 nguyên lớp; TATC/TABN ghép 7/3+7/4 (TA.Hương), 8/1+8/8 (TA.My), 9/1–9/5+9/9 (TA.Nghi),
+  9/6+9/7 (TA.Vũ2), 9/10+9/11 (TA.Vũ1); **8/4 tách đôi** (14 HS học với 8/6 – cô Vương, 5 HS với 8/7 – cô Mỹ) → một dòng Dạy ghép
+  3 lớp 2 GV `TATC-8/4+8/6+8/7` (2 nhóm bắt buộc cùng giờ, nếu khác giờ lớp 8/4 cần 41 ô > 38). Tin QT ghép 8/7+8/8. STEM ghép
+  7/1+7/2+7/3, 7/4+7/5+7/8, 8/2+8/4, 8/1+8/6+8/7+8/8; **K9 không còn STEM** (bảng STEM không phân GV cho K9). 6/7 TATC file không ghi GV →
+  giữ TA.Vương. GV TATC khác: 7/1 TA.Quỳnh, 7/5 + 7/6 TA.Hảo, 7/2 + 7/7 TA.Mỹ, 7/8 TA.Ni, 8/2 TA.Nhân.
+- Khung: `fixedOff.class` mở `thu4|chieu|3`, đóng `thu5|chieu|3` + `thu6|chieu|3` (38 ô/lớp). Gốc = kho sống 23/11 ~23:42 (chủ dự án
+  vừa thêm ô nghỉ tiết 3–4 chiều cho SĐ.Thy, TA.Quỳnh, TN.Thơ, TO.Thu, MT.Diễm chiều T5…): giữ nguyên, trừ **TA.Quỳnh `thu4|chieu|2`
+  phải gỡ** (cô nhận TATC/TABN 7/1 nhưng bị đánh dấu nghỉ hết ô cuối buổi → không còn chỗ; `softfo10.json`).
+- Bộ xếp `h10_lns.py` (sinh từ `mk_h10.py` trên h9): sáng full (`MORN_ALLOW`=0), `OFF_ALLOW` (lớp ≤29 tiết CK và tiết chiều ≤15 được
+  nghỉ 1 chiều → cả K9), tiết ghép cấm buổi sáng và cấm buổi "trọn liên kết" (`joint_place`), `dismiss()` + `W_DIS` (cùng khối cùng số
+  tiết → độ dài buổi chiều từng ngày bằng nhau), chiều 3 tiết (T5/T6) cho 1 tiết CK rồi LK (`W_ONE`, phạt nhẹ). `h10_finalize.py`.
+  Bài học tốc độ: lượt toàn trường có đủ mục tiêu mềm KHÔNG gỡ nổi vài tiết cuối; `REPAIR=1` + `FORCE` cả khối (8 lớp, 45–150 s) gỡ
+  ngay, sau đó chạy lượt thường 4–7′ để gọn lại lịch GV.
+- Kết quả đã ghi (`final13.json` = `live_f13.json`, `_updatedAt` 1795457558202): 1249 tiết-lớp đủ, sáng lớp nào cũng 4 tiết, 0 trùng GV,
+  RB Node 1 thông báo (THQT 8/4 chưa thành tiết đôi). K9: 10 lớp có LK nghỉ chiều T4, 9/8 + 9/12 nghỉ chiều T6. GV 446 buổi / 21 buổi
+  1 tiết / 42 trống 1 / 0 trống 2 (buổi 1 tiết tăng vì GV liên kết dạy tiết ghép cuối buổi). Ra về lệch khối: 5 lớp (6/5, 6/7, 7/1, 7/4,
+  8/4). 9 buổi chiều T5/T6 chỉ 1 tiết CK trước LK. Excel: `moi3/TKB LIEN KET - TKB7 lan 4 (24-11-2026).xlsx` (`export10.py`).
+
 ## 2026-11-24 TRANG /huong-dan + VIDEO HƯỚNG DẪN 9 BƯỚC TRÊN tkbcherry.com — ĐÃ DEPLOY
 
 - **Chủ dự án**: "dựa vào các TKB đã xếp tạo video hướng dẫn thật chi tiết… ví dụ Chi Lăng", rồi "up lên trang chủ hoặc chỗ nào gọi là hướng dẫn cho thầy cô xem".
