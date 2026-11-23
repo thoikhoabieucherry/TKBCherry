@@ -93,6 +93,7 @@
 - Kết quả đã ghi (`_updatedAt` 1795435387169, `final12.json` = `live_f12.json`): 1253 tiết-lớp, RB Node 0, 0 tiết vào ô nghỉ GV, lớp nào cũng đủ 10 buổi ≥2 tiết;
   GV 427 buổi / 1 buổi 1 tiết / 36 trống 1 / 0 trống 2. CÒN: buổi sáng 3 tiết ở K9 (9/1–9/4, 9/9 mỗi lớp 2 buổi; 9/5, 9/11, 9/8, 9/12 1 buổi) và 7/4 một buổi sáng 2 tiết —
   K9 bỏ Tự học nên chỉ còn 29 tiết CK: 9 tiết CK buổi chiều < 10 cần (mỗi chiều ≥2 tiết, LK sau 2 tiết CK) ⇒ ≥1 buổi sáng 3 tiết/lớp là bắt buộc; buổi thứ 2 chưa gỡ được.
+  **Chủ dự án chốt 23/11: "Không, giữ vậy"** — KHÔNG thêm lại Tự học K9, chấp nhận các buổi sáng thiếu tiết này; bản `final12` là bản dùng.
 - Công cụ mới: `h4lib.py` (dòng ghép nhiều lớp không tính trùng GV: `S.joint`, `S.jcls`), `h9_lns.py` (ghim dòng ghép khi không mở đủ lớp; `P_CLOSE` mở cả nhóm ghép),
   `h9_finalize.py`, `export8.py` (cột "ghép"). Excel: `phancong/hovanlongchinh/moi3/TKB LIEN KET - TKB7 lan 3 (23-11-2026).xlsx`.
 
