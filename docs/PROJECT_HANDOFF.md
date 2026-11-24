@@ -33,6 +33,19 @@ phải có tiết chính khoá (ai không học thì về); các lớp cùng kh�
   RB Node 1 thông báo (THQT 8/4 chưa thành tiết đôi). K9: 10 lớp có LK nghỉ chiều T4, 9/8 + 9/12 nghỉ chiều T6. GV 446 buổi / 21 buổi
   1 tiết / 42 trống 1 / 0 trống 2 (buổi 1 tiết tăng vì GV liên kết dạy tiết ghép cuối buổi). Ra về lệch khối: 5 lớp (6/5, 6/7, 7/1, 7/4,
   8/4). 9 buổi chiều T5/T6 chỉ 1 tiết CK trước LK. Excel: `moi3/TKB LIEN KET - TKB7 lan 4 (24-11-2026).xlsx` (`export10.py`).
+- **24/11 sáng — chủ dự án bấm "Chạy tiếp" (gỡ lệch giờ ra về) → ĐÃ GHI `final14.json` = `live_f14.json` (`_updatedAt` 1795491871403).**
+  Gỡ thêm được **6/5** (còn lệch 4 lớp: 6/7, 7/1, 7/4, 8/4); RB Node vẫn 1 (THQT 8/4 chưa đôi); GV 444 buổi / 18 buổi 1 tiết / 41 trống 1 /
+  0 trống 2 (tốt hơn bản `final13`). 242 ô ở 29 lớp đổi so với `final13` (do lượt gọn buổi GV). `apply.py` EXPECT = `live_f14.json`.
+  Đã CHỨNG MINH (CP-SAT OPTIMAL, mở cả khối, các khối khác giữ nguyên): K6 muốn 6/7 theo mẫu (4,4,4,2,3) thì TATC + TABN 6/7 phải chung
+  chiều T2 (trái luật nhóm "Anh/TATC/TABN không cùng buổi"); K8 ép 8/4 theo mẫu thì dư 1 tiết THQT 8/4; riêng K8 không tạo được tiết đôi
+  THQT 8/4. K7: 7/1 kẹt CN.Dung (19 tiết/19 ô) + ô cuối buổi của TA.Quỳnh; 7/4 kẹt TQT.Dũng. Toàn trường ép cứng (240 s) và K6+K8 (200 s)
+  không hội tụ (còn 2–4 tiết chưa xếp). Muốn gỡ tiếp phải NỚI luật (chưa hỏi/chưa được duyệt): cho 6/7 học TATC + TABN cùng chiều, hoặc
+  bớt ô nghỉ cuối buổi của GV liên kết.
+  Công cụ thêm vào `h10_lns.py`: `HARD_DIS=6,7,8` (ép cứng cả khối ra về cùng giờ khi cả khối nằm trong vùng), `PAT="6/5:4,4,4,2,3"` (ép độ
+  dài buổi chiều của 1 lớp), `NEIGH_T=1` (vùng = lớp chung GV với lớp bị ép); sửa lỗi `REPAIR` (mục tiêu "gần lưới cũ" trước đây thêm SAU
+  `Minimize` nên không có tác dụng). Bài học: (1) gỡ 1 lớp = `PAT` + vùng NHỎ (K=3, 15 s, nhiều vòng) — vùng 14–18 lớp không hội tụ trong
+  60–90 s; (2) chạy `K=1` trước để biết tiết nào/GV nào kẹt rồi mới chọn vùng; (3) lượt gọn buổi sau đó phải để `W_DIS` < `W_RULE`
+  (4500 < 5000): đặt 20000 thì bộ xếp đổi 1 ô trống buổi sáng lấy 1 điểm ra về (trái luật "sáng full").
 
 ## 2026-11-24 TRANG /huong-dan + VIDEO HƯỚNG DẪN 9 BƯỚC TRÊN tkbcherry.com — ĐÃ DEPLOY
 
