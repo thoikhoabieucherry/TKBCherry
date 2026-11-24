@@ -68,6 +68,8 @@ phải có tiết chính khoá (ai không học thì về); các lớp cùng kh�
   `Minimize` nên không có tác dụng). Bài học: (1) gỡ 1 lớp = `PAT` + vùng NHỎ (K=3, 15 s, nhiều vòng) — vùng 14–18 lớp không hội tụ trong
   60–90 s; (2) chạy `K=1` trước để biết tiết nào/GV nào kẹt rồi mới chọn vùng; (3) lượt gọn buổi sau đó phải để `W_DIS` < `W_RULE`
   (4500 < 5000): đặt 20000 thì bộ xếp đổi 1 ô trống buổi sáng lấy 1 điểm ra về (trái luật "sáng full").
+  Hỏi "cho 6/7 học TATC + TABN chung một buổi chiều để khối 6 ra về đều không?" → chủ dự án 24/11: **"Giữ vậy"** — KHÔNG nới luật nhóm
+  Anh/TATC/TABN; chấp nhận 4 lớp ra về lệch + THQT 8/4 chưa đôi. `final14` là bản dùng.
 
 ## 2026-11-24 TRANG /huong-dan + VIDEO HƯỚNG DẪN 9 BƯỚC TRÊN tkbcherry.com — ĐÃ DEPLOY
 
