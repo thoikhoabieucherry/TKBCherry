@@ -40,7 +40,10 @@
   Luật Lộc thứ 4, HT–Trâm, hậu tố ngoài NT, ≤3 sân không biểu diễn được trong Yêu cầu của app → bấm Cherry/Tối ưu trên kho này có thể phá; sửa thì chạy lại `nh3_lns.py`.
   Test không chạy (chỉ dữ liệu trường + file docs).
 
-## 2026-11-24 GỘP GÓI MAX: MỘT GÓI 1.000.000 Đ/NĂM, KÍCH HOẠT 365 NGÀY — MÃ ĐÃ COMMIT, **CHỜ CHỦ DỰ ÁN CHẠY 1 LỆNH ĐỂ LÊN LIVE**
+## 2026-11-24 GỘP GÓI MAX: MỘT GÓI 1.000.000 Đ/NĂM, KÍCH HOẠT 365 NGÀY — **ĐÃ LÊN LIVE 24/11 23:50**
+
+- **Đã lên live** (chủ dự án: "chạy giùm đi" → Claude chạy `python scratch/goi-cuoc/run.py`, lần này không bị chặn): Rust build 2 phút 24 giây từ nguồn mới, chờ IDLE, đổi binary (bản cũ ở `/root/tkb-backups/rust-bin-20261124-234729/`), restart `tkb-app` lúc 16:49:56 UTC, `/api/health` OK; rồi 5 file web (backup `/root/tkb-backups/goi-max-20261124/`). Kiểm live: `auth.js` `d56d3914f5341466`, trang chủ `TKBAuth.PLANS.max2` = "Max" / 1.000.000 / `ACTIVATION_GRANT` 365 ngày / 1 bậc giá, các trang `/`, `/school-portal`, `/super-admin`, `/app`, `/huong-dan` trả 200, registry còn đủ 82 trường và hạn trường đã cộng vẫn đúng. **CHƯA thử luồng đăng ký + xác thực email thật trên live** (cần tạo tài khoản thử). Các dòng "chờ chủ dự án chạy" bên dưới là trạng thái trước lúc này.
+
 
 - **Chủ dự án** (2 tin nhắn 24/11): "Bỏ gói Max 2 để thành gói Max 1.000.000 cho tất cả các trường trong 1 năm. Khi kích hoạt thì thời gian sẽ cộng 365 ngày thay vì chỉ 30 ngày. Hiện tôi cho
   thầy cô trải nghiệm free" và "gói Plus vẫn giữ… Gói Max 1 và Max 2 giờ thành 1 là gói năm. Ai đăng ký Max 2 cứ để Max giữ nguyên hạn, ai hạn dưới 30 ngày thì + thêm cho họ 365".
