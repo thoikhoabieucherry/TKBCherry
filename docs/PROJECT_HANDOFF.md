@@ -34,7 +34,8 @@
   **281 buổi GV · 0 buổi 1 tiết · 0 trống ≥2 · trống 1 = 30** (GV trường 27, trung tâm 3; không ai quá 1 tiết trống), không ai dạy vào ngày nghỉ. TKB 2 đo cùng bộ đếm: 281 buổi / 27 trống
   nhưng vi phạm luật mới (Lộc dạy thứ 5 + tiết 1, HT 2 tiết không liền, Minh chiều T6, Tin chiều T3). GDTC cùng lúc 3 lớp ở 4 ô (file ghi 2 sân nhưng cũng ghi "không xếp 4 lớp" → giữ ≤3 như 23/09).
   Phương án thay thế trên đĩa: `store3_t1.json` (thầy Dũng dạy 2 tiết IC3 chiều T3 → 280 buổi / 25 trống).
-- **Chưa hỏi lại chủ dự án** (đã làm theo nghĩa đen file mới, báo trong phiên): trợ giảng 7A4/9A4 để trống và Minh nhận lại 8A4; MT/Nhạc đổi nghỉ sang thứ 5; `TO.Ý` còn giữ "trống tiết 1 sáng".
+- **Chủ dự án xác nhận 24/11** ("Đúng, giữ vậy"): trợ giảng AVGT theo cột Nguyện vọng — 7A4/9A4 không có trợ giảng, Minh nhận lại 8A4 (thay lời 21/09).
+  **Còn là diễn giải của Claude, chưa ai xác nhận** (đã báo trong phiên): MT/Nhạc đổi nghỉ sang thứ 5; `TO.Ý` còn giữ "trống tiết 1 sáng"; GDTC ≤3 lớp cùng lúc dù file ghi 2 sân.
   Lịch mới khác TKB 2 ở 677/786 ô (không ràng giữ vị trí cũ). Phòng Tin 1 / phòng STEM 1 trong sheet điều kiện KHÔNG ràng (STEM 22 lớp chỉ có 17 ô chiều; Tin/IC3 vẫn 14 ô có 2 lớp cùng lúc như TKB 2).
   Luật Lộc thứ 4, HT–Trâm, hậu tố ngoài NT, ≤3 sân không biểu diễn được trong Yêu cầu của app → bấm Cherry/Tối ưu trên kho này có thể phá; sửa thì chạy lại `nh3_lns.py`.
   Test không chạy (chỉ dữ liệu trường + file docs).
