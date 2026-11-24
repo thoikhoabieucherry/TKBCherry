@@ -11,7 +11,7 @@
   if(window.TKBGuide) return;
 
   var NOTICE_KEY = "TKB_GUIDE_NOTICE_V1";
-  var VERSION = "20261124";
+  var VERSION = "20261124b";
   var CHAPTERS = [
     [0, "Giới thiệu"],
     [31, "Bước 1 · Đăng ký, đăng nhập"],
@@ -23,7 +23,9 @@
     [323, "Bước 7 · Yêu cầu"],
     [480, "Bước 8 · Xếp TKB"],
     [661, "Bước 9 · Chỉnh tay, in TKB"],
-    [742, "Tổng kết"]
+    [742, "Cherry Agent"],
+    [837, "Trường hợp đặc biệt"],
+    [944, "Tổng kết"]
   ];
 
   function siteBase(){
@@ -70,6 +72,9 @@
     "#tkbGuideModal .gm-body{display:flex;gap:14px;padding:14px 16px;min-height:0;overflow:auto}",
     "#tkbGuideModal .gm-video{flex:1 1 auto;min-width:0}",
     "#tkbGuideModal video{display:block;width:100%;aspect-ratio:16/9;background:#000;border-radius:10px}",
+    "#tkbGuideModal .gm-more{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;margin-top:10px;font-size:13px;color:#475569}",
+    "#tkbGuideModal .gm-more a{color:#be123c;font-weight:600;text-decoration:none}",
+    "#tkbGuideModal .gm-more a:hover{text-decoration:underline}",
     "#tkbGuideModal .gm-chapters{flex:0 0 250px;display:flex;flex-direction:column;gap:2px;overflow:auto;max-height:520px}",
     "#tkbGuideModal .gm-chapters button{display:flex;gap:10px;align-items:baseline;text-align:left;border:0;background:transparent;",
     "color:#0f172a;font:500 13px/1.35 system-ui,'Segoe UI',sans-serif;padding:7px 8px;border-radius:7px;cursor:pointer}",
@@ -173,6 +178,16 @@
           if(i === cur) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
         });
       });
+      var more = el("div", "gm-more");
+      more.appendChild(el("span", "", "Đọc thêm:"));
+      [["#agent", "Cherry Agent: bật ở đâu, cài thế nào"], ["#truong-hop-dac-biet", "Một số trường hợp đặc biệt của trường"]].forEach(function(item){
+        var a = el("a", "", item[1] + " ↗");
+        a.href = base + "/huong-dan" + item[0];
+        a.target = "_blank";
+        a.rel = "noopener";
+        more.appendChild(a);
+      });
+      wrap.appendChild(more);
       body.appendChild(wrap); body.appendChild(list);
       card.appendChild(head); card.appendChild(body);
       modal.appendChild(card);
@@ -192,7 +207,7 @@
     n.setAttribute("role", "status");
     n.appendChild(el("span", "gn-badge", "MỚI"));
     n.appendChild(el("div", "gn-title", "Video hướng dẫn xếp TKB"));
-    n.appendChild(el("p", "gn-text", "13 phút, 9 bước: từ nhập liệu đến thời khóa biểu hoàn chỉnh. Lúc nào cần xem lại, bấm nút Hướng dẫn trên thanh công cụ."));
+    n.appendChild(el("p", "gn-text", "16 phút: 9 bước từ nhập liệu đến thời khóa biểu hoàn chỉnh, kèm Cherry Agent và các trường hợp đặc biệt. Lúc nào cần xem lại, bấm nút Hướng dẫn trên thanh công cụ."));
     var actions = el("div", "gn-actions");
     var watch = el("button", "gn-primary", "▶ Xem video");
     watch.type = "button";

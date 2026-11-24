@@ -9,6 +9,25 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-24 VIDEO HƯỚNG DẪN BẢN 2 (16'02", THÊM 2 CHƯƠNG) + LINK "ĐỌC THÊM" TRONG HỘP VIDEO CỦA APP — ĐÃ DEPLOY
+
+- **Chủ dự án** duyệt danh sách 12 trường hợp ("Danh sách ổn rồi") rồi bảo làm tiếp 2 việc còn ngỏ: link tới 2 mục chữ trong hộp video của app, và đưa
+  Cherry Agent + trường hợp đặc biệt vào video.
+- **Video bản 2**: 16'02" (bản 1 là 12'41"), thêm 2 chương TRƯỚC Tổng kết — "Cherry Agent" 12:22 (8 câu: công tắc ở đâu, hộp "Cherry Agent cần Cherry.exe",
+  3 bước cài, Chrome hỏi, Tắt Agent xếp trên máy chủ, ý nghĩa chấm màu) và "Trường hợp đặc biệt" 13:57 (10 câu: 2 cơ sở, giới hạn buổi dạy, môn tránh tiết,
+  giới hạn tiết/ngày, giới hạn số tiết/1 thời điểm, còn tiết Chưa phân, thẻ "Xem thêm"); Tổng kết dời tới 15:44. Các chương 1–9 KHÔNG đổi (dùng lại đoạn đã dựng).
+  Nguồn: `scratch/video_huongdan/record_c.py` → `scenes_c.json`; `build.py` chèn `scenes_c.json` trước cảnh `ket` và thêm cách đọc `Cherry.exe`/`Cherry.zip`/`100 MB`/`Run`.
+  Bản 1 giữ ở `scratch/video_huongdan/out/huong-dan-tkbcherry.v1.mp4`. Quay không chạy lượt xếp nào và không sửa kho mẫu (chỉ mở bảng ra chụp). Giọng đọc CHƯA nghe lại bằng tai
+  (các chữ tiếng Anh "Run anyway", "More info", "Agent" là chỗ dễ đọc sai nhất).
+- **Web**: `web/huong-dan/index.html` (13 mốc, `?v=20261124b`, "khoảng 16 phút"), `web/shared/guide-notice.js` (`CHAPTERS` 13 mốc, `VERSION` `20261124b`, thẻ thông báo ghi
+  "16 phút…", dòng "Đọc thêm:" dưới video với 2 link `/huong-dan#agent` và `/huong-dan#truong-hop-dac-biet`), `web/index.html` (nút "…9 bước (16 phút)").
+- **Deploy 24/11 ~11:55**: video qua `install-public-media-nginx.py --apply` (ghi đè cùng tên, 30.989.369 byte, sha `b2118d1b87ef31b9`, cấu hình nginx không đổi); 3 file web qua
+  `scratch/huongdan-deploy/run_video_v2.py` (preflight cả 3 = HEAD), backup `/root/tkb-backups/huongdan-video-v2-20261124/`, không restart. Live sha: guide-notice `94b390254f3a73ed`,
+  huong-dan `8c2aad96d6f185b3`, index `4ad2bdb4f5e70db4`.
+- **Kiểm live** (Playwright 1366 và 390 px): `/huong-dan` 13 mốc, bấm "Trường hợp đặc biệt" → 13:57 và phát, thời lượng 963 s, không tràn ngang, 0 lỗi JS; nạp module trên
+  trang công khai → hộp video phát bản `?v=20261124b`, bấm "Cherry Agent" → 12:22, 2 link Đọc thêm đúng. Hộp video trong app sau đăng nhập chỉ kiểm trên máy chủ thử local.
+  Test không chạy lại (chỉ HTML/JS tĩnh của trang công khai và module độc lập).
+
 ## 2026-11-24 TRANG /huong-dan THÊM MỤC "CHERRY AGENT" + "MỘT SỐ TRƯỜNG HỢP ĐẶC BIỆT" — ĐÃ DEPLOY
 
 - **Chủ dự án**: "bạn nên ghi rõ chỗ sử dụng cái đặt agent rồi 1 số trường hợp đặc biệt của các trường". Claude hiểu là viết thành CHỮ trên trang Hướng dẫn
