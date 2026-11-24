@@ -9,6 +9,36 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-24 `dtv4bw29lc3` THCS NGUYỄN HUỆ TKB 3 — PCCM THÁNG 12, XẾP LẠI TOÀN TRƯỜNG — ĐÃ GHI
+
+- **Chủ dự án**: "xem `phancong/thcs nguyen hue/moi`, xếp và tối ưu theo PCCM mới" cho `sid=dtv4bw29lc3` (TKB 3, bản sao TKB 2 tạo 24/11 17:13, áp dụng 30/11).
+  Nguồn: `moi/MAU SAP TKB HK1 - THCS NGUYEN HUE 2026-2027 THÁNG 12-2026.xls` (5 sheet: SO TIET 6789, PCCN, PCCM, NGUYEN VONG, DIEU KIEN CUA TRUONG) —
+  lần đầu có file mẫu gốc của trường (tháng 9 chỉ có bản xuất SmartScheduler).
+- **Khác TKB 2** (so tự động bằng `scratch/nguyenhue3/parse_new.py`, số tiết/lớp không đổi, 786 tiết):
+  1. Toán đổi chéo: `TO.Ý` dạy 6A1, 6A2, 9A3, 9A8; `TO.Tuấn` dạy 7A1, 7A2, 9A6, 9A7.
+  2. Trung tâm: KNS + STEM khối 7, 8 = **Ichi Skill**; khối 6, 9 = **Stepping Stone** (hãng "RV" không còn). Mã mới `KNS ICHI1/2` (K7-8), `KNS SS1/2` (K6, 9),
+     `STEM ICHI1/2`, `STEM SS1/2/3`; tên hiển thị (`magv2`) "KNS Stepping Stone 1"…; bộ giải chọn người trong hãng như tháng 9.
+  3. Trợ giảng AVGT lấy theo cột **Nguyện vọng** (khác cột PCCM vẫn ghi "TCTA & GTTA" theo GV Anh của lớp): Dung 8A3/9A2/9A3, M.Chi 7A1/7A2, N.Điệp 6A1/6A4/9A1,
+     K.Cương 8A1/8A2, Q.Minh 7A3/**8A4**, Uyên 6A2/6A3; **7A4 và 9A4 không có trợ giảng** (chỉ trung tâm). Lưu ý 21/09 chủ dự án từng bảo "Quốc Minh bỏ AVGT 8A4" — file mới ghi lại 8A4.
+  4. Ngày nghỉ theo sheet NGUYEN VONG: MT/Nhạc **thứ 5** (kho cũ thứ 6), `AN.Loan` thêm thứ 6; Tin nghỉ **trọn thứ 3** (kho cũ chỉ sáng); `AV.Minh` nghỉ trọn thứ 6 (kho cũ chỉ sáng),
+     `AV.Dung` chỉ nghỉ sáng thứ 6 ("có thể sắp luôn chiều thứ Sáu"); `TC.Lộc` nghỉ thứ 5, không tiết 1, **cố định sáng thứ 4 hai tiết + chiều thứ 4 hai tiết** (2 tiết HĐTN 2,3 6A3 xếp ngày khác);
+     PE khác chỉ còn nghỉ thứ 5 (ô "tiết 1 chiều" theo GV bỏ, vẫn cấm theo MÔN GDTC). Giữ luật 21/09 không có trong file: `TO.Ý` trống tiết 1 sáng; Lộc/Minh Thọ ≤3 tiết/1 lớp/1 buổi.
+- **Luật giữ nguyên** (11–24/09): khung vừa khít, HĐTN 1 T2 tiết 1, tiết đôi Văn/Toán/Anh/KHTN/LSĐL 2/TATC/GDTC/AVGT, mỗi môn 1 buổi/ngày, tiết 4 chiều = ngoài NT,
+  KNS/STEM/IC3/AVGT/TATC là hậu tố của buổi (không xen kẽ), KNS/STEM/IC3/AVGT chỉ chiều, GDTC không tiết 1 chiều + ≤3 lớp cùng lúc, HT 2 tiết liền buổi chiều và không trùng giờ `CN.Trâm`.
+  Ghi thêm vào kho: `subject.AVGT.byClass.*.sessionAllowed = {allowMorning:false, allowAfternoon:true}`.
+- **Cách** (`scratch/nguyenhue3/`, gitignored): `nh3_build.py` (đọc kho `live3_0.json` + `new_pccm.json`, mô hình CP-SAT toàn trường) — bản ràng cứng "0 buổi 1 tiết" trả UNKNOWN sau 600 s,
+  bản `--softq` ra lịch đủ sau 200 s (5 lẻ / 2 trống ≥2) nhưng tự cải thiện rất chậm; `nh3_lns.py` (LNS mở 4–12 lớp, chỉ nhận khi điểm toàn cục giảm) + `run_rounds.sh`
+  (3 tiến trình × 7 luồng, mỗi 5 phút gom về bản tốt nhất) đưa 311 → 281 buổi trong ~45 phút. Ô "mềm" (Tin chiều T3, Minh chiều T6) phạt 300/tiết: Minh tự về 0; thầy Dũng (26 tiết)
+  phải mở cả 18 lớp với phạt 5000 mới ra 0, sau đó LNS gom lại. `nh3_verify.py` (bộ đếm độc lập, đối chiếu cả file mới) + `rb_check.js` (tkb-constraints.js thật).
+- **Kết quả đã ghi** (`store3_final.json`, mốc `_updatedAt` 1795521041871; sao lưu `backup_dtv4bw29lc3_20261124-*_truoc-ghi.json`; kéo lại live = đúng bản dựng): 786/786, verify 0 vi phạm, RB 0;
+  **281 buổi GV · 0 buổi 1 tiết · 0 trống ≥2 · trống 1 = 30** (GV trường 27, trung tâm 3; không ai quá 1 tiết trống), không ai dạy vào ngày nghỉ. TKB 2 đo cùng bộ đếm: 281 buổi / 27 trống
+  nhưng vi phạm luật mới (Lộc dạy thứ 5 + tiết 1, HT 2 tiết không liền, Minh chiều T6, Tin chiều T3). GDTC cùng lúc 3 lớp ở 4 ô (file ghi 2 sân nhưng cũng ghi "không xếp 4 lớp" → giữ ≤3 như 23/09).
+  Phương án thay thế trên đĩa: `store3_t1.json` (thầy Dũng dạy 2 tiết IC3 chiều T3 → 280 buổi / 25 trống).
+- **Chưa hỏi lại chủ dự án** (đã làm theo nghĩa đen file mới, báo trong phiên): trợ giảng 7A4/9A4 để trống và Minh nhận lại 8A4; MT/Nhạc đổi nghỉ sang thứ 5; `TO.Ý` còn giữ "trống tiết 1 sáng".
+  Lịch mới khác TKB 2 ở 677/786 ô (không ràng giữ vị trí cũ). Phòng Tin 1 / phòng STEM 1 trong sheet điều kiện KHÔNG ràng (STEM 22 lớp chỉ có 17 ô chiều; Tin/IC3 vẫn 14 ô có 2 lớp cùng lúc như TKB 2).
+  Luật Lộc thứ 4, HT–Trâm, hậu tố ngoài NT, ≤3 sân không biểu diễn được trong Yêu cầu của app → bấm Cherry/Tối ưu trên kho này có thể phá; sửa thì chạy lại `nh3_lns.py`.
+  Test không chạy (chỉ dữ liệu trường + file docs).
+
 ## 2026-11-24 LINH VẬT "CÔ GIÁO CHERRY" TRÊN TRANG CHỦ + TRANG HƯỚNG DẪN — ĐÃ DEPLOY
 
 - **Chủ dự án**: "cần 1 nhân vật vui vui để xếp TKB… tạo chibi bằng meshy.ai"; ban đầu muốn Ran Mori (Conan) rồi Aemeath (Wuthering Waves), kể cả "na ná đổi quần áo" — Claude từ chối
