@@ -9,6 +9,28 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-24 THÔNG BÁO + NÚT "HƯỚNG DẪN" XEM VIDEO NGAY TRONG APP — ĐÃ DEPLOY
+
+- **Chủ dự án**: "tôi muốn có 1 thông báo khi người dùng vào họ vẫn thấy được video hướng dẫn này trong giao diện app".
+- **Module mới `web/shared/guide-notice.js`** (tự chèn CSS, không phụ thuộc file khác; nạp ở `web/app.html` và `web/pages/sapxep.html`):
+  - Thẻ thông báo `#tkbGuideNotice` góc dưới phải ("MỚI · Video hướng dẫn xếp TKB", nút "▶ Xem video" / "Để sau" / ×), KHÔNG chặn thao tác.
+    Hiện ~1,8 s sau khi vào trang, mỗi trình duyệt một lần (`localStorage TKB_GUIDE_NOTICE_V1`, ghi khi bấm bất kỳ nút nào của thẻ hoặc mở video);
+    đang xếp (`__TKB_RUST_SOLVER_RUNNING` / `__TKB_SOLVE_UI_BUSY`) hoặc đang có hộp Cherry Agent / cài Cherry.exe thì chờ. Muốn hiện lại cho mọi người: đổi khoá sang `_V2`.
+  - Hộp `#tkbGuideModal` (`window.TKBGuide.open()` / `.close()`, Esc hoặc bấm nền để đóng, đóng thì dừng video): `<video>` + mục lục 11 mốc bấm để nhảy, link
+    "Mở ở trang riêng" → `/huong-dan`. Video lấy `/media/huong-dan-xep-tkb.mp4` (nginx); ngoài tkbcherry.com (Cherry Local, Netlify, máy thử) lấy từ `https://tkbcherry.com`.
+    `CHAPTERS` + `VERSION` trong file phải sửa cùng `web/huong-dan/index.html` khi thay video.
+- **Nút cố định `#btnGuideVideo`**: `app.html` thêm "▶ Hướng dẫn" cạnh "File .cherry" (class `cf-nav-btn`); `sapxep.html` thêm "Hướng dẫn" cạnh nút Home (dùng lại class
+  `agent-helper-button` có sẵn CSS), **ẩn dưới 900 px** vì thanh công cụ điện thoại đã kín (nút làm thanh xuống thêm một hàng) — điện thoại vẫn thấy thẻ thông báo và nút ở trang nhập liệu.
+- **Deploy 24/11** (Claude, runner `scratch/huongdan-deploy/run_app_notice.py`, khoá SSH qua worktree `claude/ssh-host-key-pin`): 3 file web, backup
+  `/root/tkb-backups/huongdan-app-notice-20261124/`, không restart, không đụng DB. Preflight: `sapxep.html` trên VPS = HEAD; `app.html` trên VPS khác HEAD đúng 1 dòng
+  (`shared/auth.js?v=20260823…` thay vì `20260904…` — bản 02/09 chưa được đẩy lại sau khi đổi `?v=`; static trả `no-store` nên vô hại), đã tải về diff rồi mới ghi đè.
+  Sau deploy sha khớp: `guide-notice.js 858f000d0e3123f7`, `app.html 460701ab0fbb082d`, `sapxep.html 8c4fdd71cd753cb6`; `/api/health` 200.
+- **Kiểm**: máy chủ thử local cổng 2399 (`scratch/huongdan-deploy/check_app_notice.py`, Playwright 1366×768 và 390×844 mobile): thẻ hiện ở cả trang nhập liệu và
+  Sắp xếp, bấm Xem video → hộp mở, "Bước 8" nhảy 08:00 và phát, Esc đóng + dừng video, F5 không hiện lại thẻ, nút menu mở lại được, không tràn ngang, 0 lỗi JS.
+  Trên live chỉ kiểm được phần KHÔNG cần đăng nhập (3 file trả đúng sha; nạp module trên một trang công khai của tkbcherry.com → thẻ hiện, video phát từ `/media/`).
+  **CHƯA kiểm bằng tài khoản thật trên live**, chưa thử điện thoại thật.
+- **Test** `run_tests.py`: vẫn đúng 7 [MOI HONG] như mục dưới (6 bộ planner do `phanmon.js` CRLF + `test_engine_v3_cpsat_lns` trượt ngưỡng thời gian), không thêm mục nào.
+
 ## 2026-11-24 THCS Hồ Văn Long (Chính) TKB 7 — LẦN 4: nhóm ghép theo THỐNG KÊ-L2 + PCCM 23/11, khung chiều mới, tiết ghép cuối buổi — ĐÃ GHI vào kho
 
 Chủ dự án thêm 2 file vào `phancong/hovanlongchinh/moi3` (`THỐNG KÊ...-L2.xlsx` có cột "XẾP LỚP" ghi rõ lớp nào ghép lớp nào;

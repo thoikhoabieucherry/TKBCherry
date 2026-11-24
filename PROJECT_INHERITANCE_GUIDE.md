@@ -178,6 +178,7 @@ Ba bộ test cần backend đang chạy (`app_assignment_subject_visibility`, `a
 | `web/about/`, `web/privacy/`, `web/terms/`, `web/public-site.css` | Trang công khai `/about`, `/privacy`, `/terms` (HTML tĩnh, không cần đăng nhập) + CSS chung |
 | `web/robots.txt`, `web/sitemap.xml` + `tools/vps-deploy/install-public-seo-nginx.py` | SEO; nginx phục vụ hai file này (khối `TKB_PUBLIC_SEO`) |
 | `web/huong-dan/index.html` + `tools/vps-deploy/install-public-media-nginx.py` | Trang Hướng dẫn (24/11/2026); video `/media/*.mp4` do nginx phục vụ từ `/var/www/tkbcherry-public/media/` (khối `TKB_PUBLIC_MEDIA`), không nằm trong git |
+| `web/shared/guide-notice.js` | Thẻ thông báo + hộp xem video hướng dẫn trong app (`TKBGuide.open()`), nút `#btnGuideVideo` ở `app.html` và `pages/sapxep.html` (24/11/2026) |
 
 ---
 
