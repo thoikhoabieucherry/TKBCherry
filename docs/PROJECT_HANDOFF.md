@@ -220,6 +220,9 @@ phải có tiết chính khoá (ai không học thì về); các lớp cùng kh�
   TA.Trang, TN.Giang, TO.Hoàng, TO.Thảo1) / 37 trống 1 / 0 trống 2; ra về lệch 9 lớp (như p21); **vẫn 2 lỗi RB** (THQT 8/5 chưa đôi,
   TN.Quang 4 tiết chiều T4). Excel "lan 5" đã xuất lại từ `live_p22.json`. Bài học: file mới khác kho đúng 1 ô lạ (GV chưa từng có)
   thì hỏi trước rồi mới thêm GV.
+- **24/11 ~16:55 — chủ dự án: "Chấp nhận, chốt bản" → `prev22.json` = `live_p22.json` LÀ BẢN DÙNG (không còn là xem thử).** Hai chỗ lệch
+  luật được chấp nhận: THQT 8/5 hai tiết rời (chiều T2 + T5) và TN.Quang 4 tiết chiều T4 (giới hạn 3) — bảng RB trên web sẽ vẫn báo
+  5 dòng cho 2 chỗ này, KHÔNG phải lỗi mới. Đừng chạy gỡ lại 2 chỗ này, số buổi 1 tiết (8) hay ra về lệch (9 lớp) nếu không được yêu cầu.
 
 ## 2026-11-24 TRANG /huong-dan + VIDEO HƯỚNG DẪN 9 BƯỚC TRÊN tkbcherry.com — ĐÃ DEPLOY
 
