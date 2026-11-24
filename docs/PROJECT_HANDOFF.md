@@ -212,6 +212,14 @@ phải có tiết chính khoá (ai không học thì về); các lớp cùng kh�
   TA.Trang, TN.Giang, TO.Hoàng, TO.Thảo1) / 38 trống 1 / 0 trống 2; **ra về lệch 9 lớp** (6/1, 6/2, 6/3, 6/7, 7/1, 7/6, 7/7, 8/3, 8/5);
   **vẫn 2 lỗi RB cũ** (THQT 8/5, TN.Quang chiều T4). Lượt `W_DIS=4500` sau đó (`h9.json`, KHÔNG ghi) chỉ đổi ngược: 10 buổi 1 tiết /
   8 lớp lệch — hai chỉ số đang đánh đổi nhau. Excel: `phancong/hovanlongchinh/moi3/TKB LIEN KET - TKB7 lan 5 (24-11-2026).xlsx`.
+- **24/11 ~16:45 — chủ dự án trả lời: "thiếu 6/6 và STEM3 dạy luôn lớp ghép 7/4 7/5 7/8" → ĐÃ BỎ `ST.4`, kho = `prev22.json` =
+  `live_p22.json` (`_updatedAt` 1795513312351, `apply.py` EXPECT = `live_p22.json`).** Tức Sheet1 ghi thiếu 6/6 (6/6 vẫn học đủ 4 môn
+  LK) và ô "STEM4" trong file là sai: ST.3 dạy cả 2 nhóm ghép K7. Luật quay về `base16.json` (phân công = y bản p20; `base17.json`,
+  `build11.py`, `prev21` chỉ còn là lịch sử). Lưới: `h8.json` chấm lại theo base16 (0 trùng GV) + 1 lượt `FORCE_T` 240 s = `j1.json`.
+  Kết quả ghi: GV 421 buổi / **8 buổi 1 tiết** (ST.3 ×2: chiều T4 t4 nhóm 7/1+7/2+7/3, chiều T5 t2 nhóm 7/4+7/5+7/8; ST.Duy, TA.Ni,
+  TA.Trang, TN.Giang, TO.Hoàng, TO.Thảo1) / 37 trống 1 / 0 trống 2; ra về lệch 9 lớp (như p21); **vẫn 2 lỗi RB** (THQT 8/5 chưa đôi,
+  TN.Quang 4 tiết chiều T4). Excel "lan 5" đã xuất lại từ `live_p22.json`. Bài học: file mới khác kho đúng 1 ô lạ (GV chưa từng có)
+  thì hỏi trước rồi mới thêm GV.
 
 ## 2026-11-24 TRANG /huong-dan + VIDEO HƯỚNG DẪN 9 BƯỚC TRÊN tkbcherry.com — ĐÃ DEPLOY
 
