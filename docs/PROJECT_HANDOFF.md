@@ -125,6 +125,16 @@ phải có tiết chính khoá (ai không học thì về); các lớp cùng kh�
   (đi từng GV: REPAIR + NOSING + FORCE_T, chỉ nhận khi không thêm vi phạm). Bài học: REPAIR bỏ mục tiêu buổi 1 tiết nên gỡ người này đẩy
   sang người khác (18 → 30 tạm thời) — phải chạy lượt thường sau đó (`W_SG=2400 W_DIS=4900 W_ONE=1500`, K=4 SUB=10 nhanh hơn K=6 SUB=20);
   lượt nhắm `FORCE_T` 7 GV ở chế độ thường (không REPAIR) hiệu quả nhất: 16 → 13 và tự gỡ luôn tiết đôi THQT 8/4.
+- **24/11 ~12:45 — chủ dự án bấm "Thử nới cho STEM" (cho vài lớp ra về lệch để gom buổi GV STEM) → ĐÃ GHI `final17.json` = `live_f17.json`
+  (`_updatedAt` 1795499001641, `apply.py` EXPECT = `live_f17.json`).** GV **434 buổi / 3 buổi 1 tiết** (SĐ.Linh chiều T5 t1 7/8, TA.Hảo chiều
+  T3 t4 TATC 7/6, VA.Loan chiều T5 t1 6/3) / 44 trống 1 / 0 trống 2; RB Node 0; 0 trùng GV; ST.3 dạy chiều T4 + T5, ST.Khải chiều T5 + T6
+  (mỗi người 2 buổi × 2 tiết). Ra về lệch khối **4 lớp** (6/7, 7/1, 7/7, 8/3) — KHÔNG tăng; mẫu K7 + K8 đổi thành (4,4,4,3,2). Giá phải
+  trả: 11 buổi chiều T5/T6 chỉ 1 tiết CK trước LK (trước 9). 407 ô đổi so với `final15`.
+  **ĐÍNH CHÍNH**: kết luận "8 buổi 1 tiết của GV STEM kẹt luật" ở mục trên là SAI — các lượt thử 130–150 s chưa hội tụ. `REPAIR=1 NOSING=<GV>
+  FORCE_T=<GV> W_DIS=500 W_ONE=500`, SUB **240 s**, 10 luồng → cả hai GV đều ra lời giải 0 vi phạm, dis không đổi (ST.Khải OPTIMAL).
+  Hai lượt chạy song song từ cùng một lưới (K7 / K8 rời nhau) rồi GHÉP theo lớp (`s_merge.json`, 1 trùng GV → lượt thường tự gỡ), sau đó
+  lượt thường `NOSING="ST.3,ST.Khải,ST.Duy"` K=4 SUB=10 300 s (19 → 6) + 2 lượt `FORCE_T` nhắm GV còn buổi 1 tiết (6 → 5 → 3).
+  Bài học: đừng kết luận "bất khả" từ lượt FEASIBLE ngắn — chỉ nói thế khi CP-SAT trả OPTIMAL; vùng cả khối 8 lớp cần ~4 phút.
 
 ## 2026-11-24 TRANG /huong-dan + VIDEO HƯỚNG DẪN 9 BƯỚC TRÊN tkbcherry.com — ĐÃ DEPLOY
 
