@@ -9,6 +9,18 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-24 VIDEO HƯỚNG DẪN BẢN 3 (17'17", ĐỦ 12 TRƯỜNG HỢP ĐẶC BIỆT) — ĐÃ DEPLOY
+
+- **Chủ dự án** (sau bản 2 chỉ nói 6/12 trường hợp): "đưa mấy cái đó vào clip chứ" → chương "Trường hợp đặc biệt" nay đi đủ 12 thẻ theo đúng thứ tự trang `/huong-dan`:
+  thêm lớp nghỉ buổi/tiết (phím X + Yêu cầu cố định lớp học), môn chỉ học chiều (Giới hạn buổi của môn học), Dạy ghép, tiết cố định (bấm đúp), tiết đôi + giờ ra chơi.
+  **Bài học: trang chữ có gì thì video phải có đủ, đừng tự bỏ vì "đã nói ở bước trước".**
+- Video 17'17" (1037 s): Cherry Agent 12:22, Trường hợp đặc biệt 13:57 (16 câu), Tổng kết 16:58. `record_c.py` (đã viết lại phần `c_dacbiet`, ảnh Dạy ghép `shots/c_dg.png`),
+  bản 2 giữ ở `out/huong-dan-tkbcherry.v2.mp4` + `scenes_c.v2.json`. Giọng đọc đoạn mới CHƯA nghe lại bằng tai.
+- Web: `?v=20261124c`, mốc Tổng kết `1018` trong `web/huong-dan/index.html` và `web/shared/guide-notice.js`, chữ "17 phút" (cả `web/index.html`).
+- Deploy 24/11: video 33.709.325 byte sha `9d5d0d8253593760` (`install-public-media-nginx.py --apply`, nginx không đổi); 3 file web qua `scratch/huongdan-deploy/run_video_v3.py`
+  (preflight = HEAD), backup `/root/tkb-backups/huongdan-video-v3-20261124/`, không restart. Live sha: guide-notice `b75ac77e974cf8a9`, huong-dan `4e98511c836d621c`,
+  index `bd82ae7d0106245b`. Kiểm live (Playwright 1366 + 390 px): 13 mốc, bấm Tổng kết → 16:58 và phát, thời lượng 1037 s, 0 lỗi JS; hộp video của module cũng nhảy đúng.
+
 ## 2026-11-24 VIDEO HƯỚNG DẪN BẢN 2 (16'02", THÊM 2 CHƯƠNG) + LINK "ĐỌC THÊM" TRONG HỘP VIDEO CỦA APP — ĐÃ DEPLOY
 
 - **Chủ dự án** duyệt danh sách 12 trường hợp ("Danh sách ổn rồi") rồi bảo làm tiếp 2 việc còn ngỏ: link tới 2 mục chữ trong hộp video của app, và đưa

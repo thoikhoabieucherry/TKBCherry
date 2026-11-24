@@ -11,7 +11,7 @@
   if(window.TKBGuide) return;
 
   var NOTICE_KEY = "TKB_GUIDE_NOTICE_V1";
-  var VERSION = "20261124b";
+  var VERSION = "20261124c";
   var CHAPTERS = [
     [0, "Giới thiệu"],
     [31, "Bước 1 · Đăng ký, đăng nhập"],
@@ -25,7 +25,7 @@
     [661, "Bước 9 · Chỉnh tay, in TKB"],
     [742, "Cherry Agent"],
     [837, "Trường hợp đặc biệt"],
-    [944, "Tổng kết"]
+    [1018, "Tổng kết"]
   ];
 
   function siteBase(){
@@ -207,7 +207,7 @@
     n.setAttribute("role", "status");
     n.appendChild(el("span", "gn-badge", "MỚI"));
     n.appendChild(el("div", "gn-title", "Video hướng dẫn xếp TKB"));
-    n.appendChild(el("p", "gn-text", "16 phút: 9 bước từ nhập liệu đến thời khóa biểu hoàn chỉnh, kèm Cherry Agent và các trường hợp đặc biệt. Lúc nào cần xem lại, bấm nút Hướng dẫn trên thanh công cụ."));
+    n.appendChild(el("p", "gn-text", "17 phút: 9 bước từ nhập liệu đến thời khóa biểu hoàn chỉnh, kèm Cherry Agent và các trường hợp đặc biệt. Lúc nào cần xem lại, bấm nút Hướng dẫn trên thanh công cụ."));
     var actions = el("div", "gn-actions");
     var watch = el("button", "gn-primary", "▶ Xem video");
     watch.type = "button";
