@@ -187,6 +187,15 @@ phải có tiết chính khoá (ai không học thì về); các lớp cùng kh�
   Trình tự đã chạy: REPAIR 23 lớp K6–8 480 s (hết `morning_forbidden`, còn 11 tiết thiếu) → REPAIR LNS K=8–14 (11 → 0 thiếu) → FORCE
   sáng T3 → lượt thường K=4 SUB=10 (51 → 19 buổi 1 tiết) → +2 lượt (16). Việc còn lại: 2 lỗi luật, `NOSING` cho ST.3/ST.Khải/ST.Duy
   (đang lại có buổi 1 tiết), kéo `dis` 15 xuống.
+- **24/11 tối — chủ dự án: "Giữ luật, chạy tiếp" → BẢN XEM THỬ MỚI `prev20.json` = `live_p20.json` (`_updatedAt` 1795507580856, `apply.py`
+  EXPECT = `live_p20.json`):** GV 423 buổi / **10 buổi 1 tiết** (ST.3 ×2, ST.Khải ×2, ST.Duy, TA.Ni, TA.Trang, TO.Hoàng, TO.Thảo1,
+  VA.Trang) / 41 trống 1 / 0 trống 2; **ra về lệch 8 lớp** (6/1, 6/2, 6/3, 6/7, 7/1, 7/6, 7/7, 8/3); 10 chiều T5/T6 chỉ 1 tiết CK;
+  **vẫn 2 lỗi RB** (THQT 8/5 chưa đôi; TN.Quang 4 tiết chiều T4). Đủ tiết, sáng full CK, 0 LK buổi sáng, 0 trùng GV.
+  Đã thử thêm mà KHÔNG gỡ được 2 lỗi (đều FEASIBLE, không chứng minh): REPAIR cả K7 320 s; REPAIR K8 + 9/1, 9/3, 9/4, 9/5, 9/6 320 s.
+  Ép `NOSING` GV STEM theo khối dưới luật mới: ST.Khải được nhưng `dis` +2 (OPTIMAL); ST.3 → vỡ luật nhóm TATC + two_sess; ST.Duy → mất
+  2 tiết đôi (2 cái sau FEASIBLE 250 s). Lượt thường `W_SG=3500 W_DIS=3000`: 16 → 10 buổi 1 tiết rồi đứng yên (2 lượt 10′ không giảm) —
+  LNS đã chạm ngưỡng. Hướng còn lại cần chủ dự án quyết: chấp nhận 2 lỗi (cho TN.Quang 4 tiết chiều T4, THQT 8/5 2 tiết rời) hay nới
+  ô nghỉ/giới hạn GV.
 
 ## 2026-11-24 TRANG /huong-dan + VIDEO HƯỚNG DẪN 9 BƯỚC TRÊN tkbcherry.com — ĐÃ DEPLOY
 
