@@ -102,6 +102,17 @@ phải có tiết chính khoá (ai không học thì về); các lớp cùng kh�
   (4500 < 5000): đặt 20000 thì bộ xếp đổi 1 ô trống buổi sáng lấy 1 điểm ra về (trái luật "sáng full").
   Hỏi "cho 6/7 học TATC + TABN chung một buổi chiều để khối 6 ra về đều không?" → chủ dự án 24/11: **"Giữ vậy"** — KHÔNG nới luật nhóm
   Anh/TATC/TABN; chấp nhận 4 lớp ra về lệch + THQT 8/4 chưa đôi. `final14` là bản dùng.
+- **24/11 trưa — chủ dự án: "dạy 1 tiết/buổi còn nhiều quá xử lý giúp được không" → ĐÃ GHI `final15.json` = `live_f15.json`
+  (`_updatedAt` 1795496512526, `apply.py` EXPECT = `live_f15.json`).** GV 441 buổi / **13 buổi 1 tiết** (trước 18) / 39 trống 1 / 0 trống 2;
+  **RB Node 0** (THQT 8/4 đã thành tiết đôi); 389 ô ở 33 lớp đổi so với `final14`. Đổi lại: ra về lệch khối 5 lớp thay vì 4
+  (6/7, 7/1, 7/4 như cũ; 8/4 hết lệch, 8/1 + 8/8 lệch mới: (4,4,4,3,2) và (4,4,3,3,3) so với khối 8 (4,4,4,2,3)); 9 buổi chiều T5/T6 1 tiết CK.
+  13 buổi còn lại: ST.3 ×4, ST.Khải ×4 (mỗi người 4 nhóm × 1 tiết, tiết ghép phải cuối buổi chiều + cả khối ra về cùng giờ → mỗi chiều chỉ
+  1 ô; ép cứng `NOSING` thì ST.3 dư 1 tiết, ST.Khải mất 1 tiết đôi + lệch ra về +3 lớp — chưa chứng minh OPTIMAL), TA.Hương, TA.Hảo
+  (tiết TATC lẻ cuối buổi; gỡ thì lệch ra về), MT.Vĩ, SĐ.Linh, TN.Thái (chưa thử hết).
+  Công cụ thêm: `NOSING="GV,..."` (ép cứng GV không có buổi 1 tiết), `FORCE_T="GV1;GV2"` (vùng = mọi lớp của GV), `nosing_drv.py`
+  (đi từng GV: REPAIR + NOSING + FORCE_T, chỉ nhận khi không thêm vi phạm). Bài học: REPAIR bỏ mục tiêu buổi 1 tiết nên gỡ người này đẩy
+  sang người khác (18 → 30 tạm thời) — phải chạy lượt thường sau đó (`W_SG=2400 W_DIS=4900 W_ONE=1500`, K=4 SUB=10 nhanh hơn K=6 SUB=20);
+  lượt nhắm `FORCE_T` 7 GV ở chế độ thường (không REPAIR) hiệu quả nhất: 16 → 13 và tự gỡ luôn tiết đôi THQT 8/4.
 
 ## 2026-11-24 TRANG /huong-dan + VIDEO HƯỚNG DẪN 9 BƯỚC TRÊN tkbcherry.com — ĐÃ DEPLOY
 
