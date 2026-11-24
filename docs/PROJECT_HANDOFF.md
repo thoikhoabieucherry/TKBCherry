@@ -40,6 +40,29 @@
   Luật Lộc thứ 4, HT–Trâm, hậu tố ngoài NT, ≤3 sân không biểu diễn được trong Yêu cầu của app → bấm Cherry/Tối ưu trên kho này có thể phá; sửa thì chạy lại `nh3_lns.py`.
   Test không chạy (chỉ dữ liệu trường + file docs).
 
+## 2026-11-24 GỘP GÓI MAX: MỘT GÓI 1.000.000 Đ/NĂM, KÍCH HOẠT 365 NGÀY — MÃ ĐÃ COMMIT, **CHỜ CHỦ DỰ ÁN CHẠY 1 LỆNH ĐỂ LÊN LIVE**
+
+- **Chủ dự án** (2 tin nhắn 24/11): "Bỏ gói Max 2 để thành gói Max 1.000.000 cho tất cả các trường trong 1 năm. Khi kích hoạt thì thời gian sẽ cộng 365 ngày thay vì chỉ 30 ngày. Hiện tôi cho
+  thầy cô trải nghiệm free" và "gói Plus vẫn giữ… Gói Max 1 và Max 2 giờ thành 1 là gói năm. Ai đăng ký Max 2 cứ để Max giữ nguyên hạn, ai hạn dưới 30 ngày thì + thêm cho họ 365".
+  Câu "vì năm sau mới thu phí nên tạm thời vẫn để là Trial (gói này coi như sau này ai hết hạn sẽ về đây)" CHƯA rõ nghĩa — đã hỏi lại, chưa làm gì theo câu này.
+- **Phát hiện**: thay đổi 04/09 (kích hoạt 365 ngày) có trong git nhưng CHƯA BAO GIỜ lên live — live `web/shared/auth.js` (bản 23/08) vẫn cấp 30 ngày và Rust trên VPS (nguồn 25/08, binary build
+  21/11) chỉ nhận hạn kích hoạt ≤31 ngày. Nên KHÔNG được đưa `auth.js` mới lên trước khi Rust được build lại: client xin 365 ngày thì server cũ bỏ qua, trường kích hoạt xong không được gói nào.
+- **Mã đã sửa (chỉ giao diện)**: `web/shared/auth.js` — `MAX_PLAN_PRICING` còn 1 bậc (`id:"from-40-classes"`, `planId:"max2"`, 1.000.000, nhãn "Max"; giữ id cũ vì Rust coi đúng cặp này là
+  không giới hạn lớp), `PLANS.max2` = "Max" 1.000.000/365 ngày, `PLANS.max1` = "Max 1 (cũ)" `legacy:true`, mặc định `classCount` không còn lấy `tiers[0].maxClasses`.
+  `web/school-portal.js` — thẻ Max một giá, không còn bảng chọn bậc (ô radio ẩn giữ luồng nút), thêm dòng "Mọi trường, không giới hạn số lớp". `web/super-admin.js` — ô chọn gói: Free/Trial/Plus/
+  Max/Ultra ("Max 1 (cũ)" chỉ hiện cho trường đang ở gói đó). `web/school-portal.html`, `web/index.html` — bỏ chữ "30 ngày miễn phí" → "1 năm gói Max miễn phí". Plus (300.000/30 ngày) và Ultra giữ nguyên.
+  Rust KHÔNG sửa thêm (nguồn trong git đã có trần 366 ngày từ 04/09).
+- **Dữ liệu live (đọc 24/11 ~23:35, 82 trường)**: 45 `max2`, 9 `max` cũ (đều bậc from-40 → không bị trần lớp), 20 `ultra`, 8 `free`; KHÔNG có `max1` nên không ai bị giới hạn 39 lớp và không cần chuyển
+  dữ liệu. Chỉ 1 trường hạn <30 ngày (kích hoạt hôm 24/11 nên được 30 ngày): đã +365 ngày bằng `scratch/goi-cuoc/extend_under30.py --apply` (sao lưu DB bằng sqlite backup API vào
+  `/root/tkb-backups/goi-max-registry-20261124-163504/`, ghi 1 giao dịch vào khoá `auth_registry`; hạn 24/12/2026 → 24/12/2027). Các trường Max 2 khác giữ nguyên hạn.
+- **Đã làm trên VPS**: tải `rust_api/src/main.rs` (bản git, chỉ khác trần 31→366 ngày + test) lên, backup `/root/tkb-backups/goi-max-rust-20261124/`. **Binary đang chạy CHƯA đổi** — bước
+  `build-rust.py` bị bộ kiểm quyền chặn với Claude. **Việc còn lại = chủ dự án chạy `python scratch/goi-cuoc/run.py`**: (1) `build-rust.py --apply` của worktree `claude/ssh-host-key-pin`
+  (build ở thư mục riêng, chờ hết lượt xếp, đổi binary, restart, kiểm `/api/health`); (2) nếu OK thì `scratch/goi-cuoc/run_plans.py deploy` đưa 5 file web lên (preflight chấp nhận 3 file cũ đã diff:
+  chỉ khác 30→365 và chuỗi `?v=`). Sau đó cần kiểm: đăng ký một trường thử → xác thực email → được Max 365 ngày.
+- **Test**: `max_plan_pricing_node` (đã cập nhật theo chính sách mới; còn 3 mục hỏng CŨ do so chuỗi `?v=`/CSS, y như trước khi sửa), `auth_activation_grant_one_year_node` + `super_admin_default_school_node` qua.
+  Kiểm giao diện trên máy chủ thử local (`scratch/goi-cuoc/check_portal.py`): thẻ Max "1.000.000 đ / năm… Mọi trường, không giới hạn số lớp… Gia hạn · 1.000.000 đ", hộp chuyển khoản 1.000.000 đ, trang quản trị
+  hiện Free/Trial/Plus/Max/Ultra, 0 lỗi JS.
+
 ## 2026-11-24 VIDEO HƯỚNG DẪN BẢN 5 — LINH VẬT TRONG VIDEO, HIỆU ỨNG, SỬA 14 KHUNG ĐỎ — ĐÃ DEPLOY
 
 - **Chủ dự án**: "thật ra tôi muốn chèn nhân vật vào video, bạn rà soát lại khúc bạn đóng khung đỏ có nhiều chi tiết chưa chính xác, tôi muốn bạn thêm hiệu ứng cho đẹp".

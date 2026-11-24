@@ -100,7 +100,8 @@ function authForRegistry(registry, options = {}){
   return {auth, savedRegistry:() => savedRegistry};
 }
 
-test("service-plan contract prices Plus and separates Max 1 from Max 2", () => {
+// 24/11/2026 (chủ dự án): bỏ Max 2 — một gói Max 1.000.000 đ/năm cho mọi trường (id nội bộ "max2").
+test("service-plan contract prices Plus and sells a single yearly Max plan", () => {
   const auth = loadAuth();
 
   assert.equal(auth.PLANS.free.solveLimit, 5);
@@ -111,21 +112,25 @@ test("service-plan contract prices Plus and separates Max 1 from Max 2", () => {
   assert.equal(auth.PLANS.max1.price, 1_000_000);
   assert.equal(auth.PLANS.max1.classLimit, 39);
   assert.equal(auth.PLANS.max1.unlimitedSolves, true);
-  assert.equal(auth.PLANS.max2.price, 1_500_000);
+  assert.equal(auth.PLANS.max2.price, 1_000_000);
+  assert.equal(auth.PLANS.max2.label, "Max");
+  assert.equal(auth.PLANS.max2.durationDays, 365);
+  assert.equal(auth.PLANS.max1.legacy, true);
   assert.equal(auth.PLANS.max2.unlimitedClasses, true);
   assert.equal(auth.PLANS.max2.unlimitedSolves, true);
 
   assert.equal(auth.MAX_PLAN_PRICING.dimension, "classes");
   assert.equal(auth.MAX_PLAN_PRICING.thresholdClasses, 40);
-  assert.equal(auth.MAX_PLAN_PRICING.tiers.length, 2);
-  assert.equal(auth.maxPlanIdForClasses(1), "max1");
-  assert.equal(auth.maxPlanIdForClasses(39), "max1");
+  assert.equal(auth.MAX_PLAN_PRICING.tiers.length, 1);
+  assert.equal(auth.maxPlanIdForClasses(1), "max2");
+  assert.equal(auth.maxPlanIdForClasses(39), "max2");
   assert.equal(auth.maxPlanIdForClasses(40), "max2");
   assert.equal(auth.maxPlanIdForClasses(50_000), "max2");
   assert.equal(auth.maxPlanPriceForClasses(39), 1_000_000);
-  assert.equal(auth.maxPlanPriceForClasses(40), 1_500_000);
-  assert.equal(auth.maxPlanTierForClasses(39).label, "Max 1 · Dưới 40 lớp");
-  assert.equal(auth.maxPlanTierForClasses(40).label, "Max 2 · Từ 40 lớp");
+  assert.equal(auth.maxPlanPriceForClasses(40), 1_000_000);
+  assert.equal(auth.maxPlanTierForClasses(39).label, "Max");
+  assert.equal(auth.maxPlanTierForClasses(40).label, "Max");
+  assert.equal(auth.maxPlanTierForClasses(40).id, "from-40-classes");
 });
 
 test("legacy Max records map safely to an explicit plan", () => {
@@ -157,7 +162,7 @@ test("explicit Max activation records the assigned plan and exact amount", () =>
   const max2 = max2Harness.auth.activatePlan("school1", "max2", true, {classCount:40});
   assert.equal(max2.ok, true);
   assert.equal(max2.plan, "max2");
-  assert.equal(max2.paymentAmount, 1_500_000);
+  assert.equal(max2.paymentAmount, 1_000_000);
   assert.equal(max2.classCount, 40);
   assert.equal(max2Registry.schools.school1.plan, "max2");
   assert.equal(max2Registry.schools.school1.maxPlanPricingTier, "from-40-classes");
@@ -188,20 +193,26 @@ test("Max 1 activation refuses class metadata at or above 40 atomically", () => 
 
   assert.equal(result.ok, false);
   assert.equal(result.kind, "max1_class_limit_exceeded");
-  assert.match(result.message, /Max 2/);
+  assert.match(result.message, /gói Max cho trường từ 40 lớp/);
   assert.equal(registry.schools.school1.plan, "free");
   assert.equal(harness.savedRegistry(), null);
 });
 
-test("legacy Max activation input still selects the corresponding explicit tier", () => {
+test("legacy Max activation input always selects the single Max plan", () => {
   const registry = registryFixture();
   const harness = authForRegistry(registry);
   const result = harness.auth.activatePlan("school1", "max", true, {classCount:40});
 
   assert.equal(result.ok, true);
   assert.equal(result.plan, "max2");
-  assert.equal(result.paymentAmount, 1_500_000);
+  assert.equal(result.paymentAmount, 1_000_000);
   assert.equal(registry.schools.school1.plan, "max2");
+
+  const small = registryFixture();
+  const smallResult = authForRegistry(small).auth.activatePlan("school1", "max", true, {classCount:12});
+  assert.equal(smallResult.plan, "max2");
+  assert.equal(smallResult.paymentAmount, 1_000_000);
+  assert.equal(small.schools.school1.maxPlanPricingTier, "from-40-classes");
 });
 
 test("each Plus activation creates a fresh shared 100-request billing cycle", () => {
@@ -281,10 +292,12 @@ test("failed SID migration keeps the registry on its source and never clears it"
   ]);
 });
 
-test("school portal shows Plus quota, both Max choices and equal-height desktop cards", () => {
+test("school portal shows Plus quota, one Max plan and equal-height desktop cards", () => {
   assert.match(portalSource, /MAX_PLAN_PRICING_FALLBACK/);
-  assert.match(portalSource, /planId:"max1"/);
+  assert.doesNotMatch(portalSource, /planId:"max1"/);
   assert.match(portalSource, /planId:"max2"/);
+  assert.doesNotMatch(portalSource, /Max 2|1500000/);
+  assert.match(portalSource, /Mọi trường, không giới hạn số lớp/);
   assert.match(portalSource, /data-max-plan/);
   assert.match(portalSource, /p\.solveLimit/);
   assert.match(portalSource, /Không giới hạn lượt Xếp \/ Tối ưu/);
@@ -310,9 +323,10 @@ test("school portal shows Plus quota, both Max choices and equal-height desktop 
   assert.match(lightCss, /\.plan-card\[data-plan-card="plus"\],[\s\S]*?\.plan-card\[data-plan-card="max"\][\s\S]*?border-color:\s*color-mix\(in srgb, var\(--plan-color/);
 });
 
-test("Super Admin assigns Max 1 and Max 2 with concise selector labels", () => {
-  assert.match(superAdminSource, /\["max1", "Max 1"\]/);
-  assert.match(superAdminSource, /\["max2", "Max 2"\]/);
+test("Super Admin assigns the single Max plan; legacy Max 1 only shows for schools still on it", () => {
+  assert.match(superAdminSource, /currentPlan === "max1" \? \[\["max1", "Max 1 \(cũ\)"\]\] : \[\]/);
+  assert.match(superAdminSource, /\["max2", "Max"\]/);
+  assert.doesNotMatch(superAdminSource, /"Max 2"/);
   assert.doesNotMatch(superAdminSource, /Max 1 · tối đa 39 lớp|Max 2 · không giới hạn lớp/);
   assert.match(superAdminSource, /const plan = A\.effectivePlan\(s\)/);
   assert.match(superAdminSource, /A\.activatePlan\(id, planId/);

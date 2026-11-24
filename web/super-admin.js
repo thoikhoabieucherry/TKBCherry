@@ -291,12 +291,14 @@
   }
 
   function renderPlanSelect(currentPlan, extraClass=""){
+    // 24/11/2026 (chủ dự án): chỉ còn một gói Max 1.000.000 đ/năm (id nội bộ "max2"). "Max 1 (cũ)"
+    // chỉ hiện cho trường đang ở gói đó để ô chọn không hiển thị sai; không gán mới được nữa.
     const planOptions = [
       ["free", "Free"],
       ["trial", "Trial"],
       ["plus", "Plus"],
-      ["max1", "Max 1"],
-      ["max2", "Max 2"],
+      ...(currentPlan === "max1" ? [["max1", "Max 1 (cũ)"]] : []),
+      ["max2", "Max"],
       ["ultra", "Ultra"]
     ];
     const classes = `portal-plan-select${extraClass ? " " + extraClass : ""}`;
@@ -399,7 +401,7 @@
     const planId = sel.value;
     if(planId === "max1" || planId === "max2"){
       const selectedPlan = A.PLANS[planId];
-      const scope = planId === "max1" ? "tối đa 39 lớp" : "không giới hạn số lớp";
+      const scope = planId === "max1" ? "gói cũ, tối đa 39 lớp" : "mọi trường, không giới hạn số lớp";
       if(!confirm(`Kích hoạt ${selectedPlan.label} (${scope}) — ${A.formatMoney(selectedPlan.price)}/năm?`)){
         renderSchools();
         return;
