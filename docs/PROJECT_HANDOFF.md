@@ -223,6 +223,17 @@ phải có tiết chính khoá (ai không học thì về); các lớp cùng kh�
 - **24/11 ~16:55 — chủ dự án: "Chấp nhận, chốt bản" → `prev22.json` = `live_p22.json` LÀ BẢN DÙNG (không còn là xem thử).** Hai chỗ lệch
   luật được chấp nhận: THQT 8/5 hai tiết rời (chiều T2 + T5) và TN.Quang 4 tiết chiều T4 (giới hạn 3) — bảng RB trên web sẽ vẫn báo
   5 dòng cho 2 chỗ này, KHÔNG phải lỗi mới. Đừng chạy gỡ lại 2 chỗ này, số buổi 1 tiết (8) hay ra về lệch (9 lớp) nếu không được yêu cầu.
+- **24/11 ~17:00–18:10 — chủ dự án: "có cách nào hạn chế dạy 1 tiết/buổi không? tôi thấy có thể ép được" → THỬ ÉP ~1 GIỜ, KHÔNG GỠ ĐƯỢC BUỔI
+  NÀO, KHO GIỮ NGUYÊN `live_p22.json`.** Công cụ mới `scratch/hvl7/`: `okgv.py BASE GRID [gv,…]` (in mọi GV đang KHÔNG có buổi 1 tiết —
+  đưa vào `NOSING` để cấm sinh buổi 1 tiết mới), `ns2.py BASE START OUT [TRIES] [SUB] [DIS_SLACK] [K]` (env `ONLY=gv,…`; gỡ từng buổi
+  1 tiết: lượt thường + `NOSING` = GV ổn + GV đích, vùng = `FORCE_T` mọi lớp của GV đích + K lớp chung GV; chỉ nhận khi `unpl=0`, không
+  thêm vi phạm, buổi 1 tiết giảm, `dis` ≤ mốc + slack). Kết quả:
+  (1) TA.Trang (TATC 6/5 chiều T3 t4): OPTIMAL ×4 — phải phạm `same_session` (TATC cùng buổi Anh/TABN) mới bỏ được ⇒ bất khả nếu giữ luật
+  nhóm; (2) TN.Giang (KHTN 8/1 chiều T6 t1): OPTIMAL ×5 — phải trống tiết sáng/rơi tiết; (3) TA.Ni (TATC 7/8 chiều T5 t3): OPTIMAL 120 s
+  trong vùng lớp của cô + 2 — mất 1 tiết đôi + trống 1 tiết sáng; (4) TO.Hoàng, TO.Thảo1, ST.3 ×2, ST.Duy: mọi lượt FEASIBLE còn rơi
+  tiết/vi phạm (40–120 s vùng GV; 280–290 s cả K6, cả K7, K6+K7) — CHƯA chứng minh. **Bẫy:** `NOSING` cứng + tiết chưa xếp chỉ là phạt mềm
+  ⇒ bộ xếp "gỡ" buổi 1 tiết bằng cách bỏ rơi chính tiết đó (`unpl=1`, vẫn in OPTIMAL và `viol` sạch) — phải kiểm `unpl` trước khi tin
+  (em đã báo nhầm ST.Duy/TA.Ni "gỡ được, chỉ lệch ra về" rồi đính chính). REPAIR + NOSING một GV thì đẩy tiết lẻ sang GV khác (8 → 10).
 
 ## 2026-11-24 TRANG /huong-dan + VIDEO HƯỚNG DẪN 9 BƯỚC TRÊN tkbcherry.com — ĐÃ DEPLOY
 
