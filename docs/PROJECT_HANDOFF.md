@@ -236,6 +236,24 @@ phải có tiết chính khoá (ai không học thì về); các lớp cùng kh�
   (em đã báo nhầm ST.Duy/TA.Ni "gỡ được, chỉ lệch ra về" rồi đính chính). REPAIR + NOSING một GV thì đẩy tiết lẻ sang GV khác (8 → 10).
   Hỏi "cho TATC học cùng buổi với TABN ở các lớp còn tiết lẻ để ép tiếp?" → chủ dự án 24/11: **"Không, giữ bản chốt"** — KHÔNG nới luật
   nhóm Anh/TATC/TABN, `live_p22.json` vẫn là bản dùng với 8 buổi 1 tiết; đừng tự chạy ép lại.
+- **24/11 ~18:20–20:10 — chủ dự án gửi ảnh TA.Trang/TN.Giang "sao không kéo tiết Anh ở trên xuống", rồi LUẬT MỚI: "chiều thứ 5 và 6 không
+  nhất thiết nghỉ giống nhau, chiều thứ 5 và 6 tối đa 3 tiết" → KHO = `prev23.json` = `live_p23.json` (`_updatedAt` 1795519214267,
+  `apply.py` EXPECT = `live_p23.json`): 7 buổi 1 tiết.** `h10_lns.py`/`h10_finalize.py` nhận env **`DIS_DAYS=3`** (ra về giống nhau chỉ
+  tính T2–T4; mặc định 5 = như cũ) — từ nay chạy trường này luôn đặt `DIS_DAYS=3`. Theo luật mới còn lệch T2–T4: 6 lớp (6/1, 6/2, 6/3,
+  6/7, 7/7, 8/5). Kết quả: mở trọn K7 lượt thường `W_SG=4900 NOSING=<mọi GV đang ổn>` 280 s gỡ được TA.Ni (8 → 7) = `u7.json`; GV 420
+  buổi / 38 trống 1 / 0 trống 2; vẫn 2 lỗi RB đã chấp nhận. **Còn 7:** ST.3 ×2 (chiều T4 t4 nhóm 7/1+7/2+7/3; chiều T5 t2 nhóm
+  7/4+7/5+7/8), ST.Duy (6/7 chiều T2 t3), TA.Trang (TATC 6/5 chiều T3 t4), TN.Giang (KHTN 8/1 chiều T6 t1), TO.Hoàng (HĐTN-HN 3 7/4
+  chiều T5 t1), TO.Thảo1 (Toán 7/8 chiều T5 t1).
+  Công cụ thêm: `swap_ls.py BASE START OUT` (thử MỌI nước đổi 2 ô cùng lớp có dính GV còn tiết lẻ, chấm bằng `score_of` của h10_lns —
+  2.772 nước, 0 nước sạch; ~0,12 s/nước), `swap_why.py BASE GRID GV` (in từng nước "kéo tiết khác của GV về sát tiết lẻ" và lý do bị chặn),
+  `rp.py BASE START OUT SUB "GV,..|lớp,..;…"` (chuỗi REPAIR + NOSING theo khối, chỉ nhận bản sạch).
+  Vì sao còn lẻ: (a) mỗi lớp K7–K8 có 1 buổi chiều T5/T6 chỉ 1 tiết CK trước tiết LK/nhóm ghép — ai dạy tiết đó cũng lẻ trừ khi có tiết
+  lớp khác ngay sau; (b) TA.Trang: muốn kéo Anh 7/6, 7/7 xuống chiều T3 t3 thì vướng tiết đôi TABN 7/6 / THQT 7/7 (LK cuối buổi), Anh 6/5
+  thì phạm "Anh–TATC không cùng buổi"; nước gần nhất là HĐTN-HN 3 6/5 xuống chiều T3 t3 (vướng TN.Hằng1 dạy 6/4 sáng T3 t4 + KHTN 2 buổi/
+  ngày); (c) TN.Giang: đổi với N Văn 8/1 sáng T6 t2 thì sạch luật nhưng tiết lẻ sang VA.Trang; mở 8/1+8/6+8/7+8/8+9/9 = INFEASIBLE.
+  Đã thử mà KHÔNG ra bản sạch (FEASIBLE còn vi phạm, chưa chứng minh): K6/K7/K8 trọn khối lượt thường 230–280 s × 20 luồng; `rp.py`
+  230 s mỗi ca (Giang + K8: thừa 1 `two_sess` + 1 `block_miss`; Trang + 6/5 + K7: phải `same_session`; Hoàng/Thảo1 + K7 + 4 lớp K6;
+  ST.3 + K7). Excel "lan 5" xuất lại từ `live_p23.json`.
 
 ## 2026-11-24 TRANG /huong-dan + VIDEO HƯỚNG DẪN 9 BƯỚC TRÊN tkbcherry.com — ĐÃ DEPLOY
 
