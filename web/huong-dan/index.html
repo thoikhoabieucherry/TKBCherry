@@ -19,10 +19,14 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&amp;display=swap" />
-  <link rel="stylesheet" href="/about/about.css?v=20261108-home-v1" />
+  <link rel="stylesheet" href="/about/about.css?v=20261124-mascot-v1" />
   <style>
     .hd-hero { padding: 40px 0 8px; }
     .hd-hero h1 { margin: 6px 0 10px; font-size: clamp(1.7rem, 3.4vw, 2.4rem); line-height: 1.2; font-weight: 800; color: #0f172a; }
+    .hd-hero-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+    .hd-hero-text { min-width: 0; }
+    .hd-hero .ab-mascot { margin: 0; flex: none; }
+    .hd-hero .ab-mascot-say { max-width: 230px; font-size: .92rem; color: #0f172a; }
     .hd-hero p { margin: 0; max-width: 62ch; color: #475569; font-size: 1.02rem; line-height: 1.65; }
     .hd-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; align-items: start; padding-top: 28px; padding-bottom: 56px; }
     .hd-player { background: #0b1220; border-radius: 14px; overflow: hidden; box-shadow: 0 18px 40px rgba(15, 23, 42, .18); }
@@ -61,6 +65,7 @@
     @media (max-width: 900px) {
       .hd-layout { grid-template-columns: minmax(0, 1fr); gap: 20px; padding-bottom: 40px; }
       .hd-hero { padding-top: 28px; }
+      .hd-hero-row { flex-direction: column; align-items: stretch; gap: 14px; }
       .hd-agent, .hd-cases { grid-template-columns: minmax(0, 1fr); }
     }
   </style>
@@ -97,10 +102,16 @@
 
   <main id="noi-dung">
     <section class="hd-hero">
-      <div class="ab-container">
+      <div class="ab-container hd-hero-row">
+        <div class="hd-hero-text">
         <p class="ab-kicker">Hướng dẫn sử dụng</p>
         <h1>Xếp thời khóa biểu từ đầu đến cuối trong 9 bước</h1>
         <p>Video khoảng 14 phút, quay trên chính phần mềm, đi từ lúc đăng nhập và nhập dữ liệu cho đến khi có thời khóa biểu hoàn chỉnh để in. Trường ví dụ là một trường THCS học hai buổi, 37 lớp, khoảng 100 giáo viên; tên giáo viên trong video là tên mẫu.</p>
+        </div>
+        <div class="ab-mascot">
+          <img class="ab-mascot-img" src="/assets/mascot/cherry-teacher.png?v=20261124" width="378" height="512" alt="Cô giáo Cherry, linh vật của Cherry Scheduler, cầm bảng thời khóa biểu" />
+          <p class="ab-mascot-say">Thầy cô xem video, chỗ nào chưa rõ thì kéo xuống phần chữ bên dưới nhé!</p>
+        </div>
       </div>
     </section>
 

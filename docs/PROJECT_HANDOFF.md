@@ -9,6 +9,22 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-24 LINH VẬT "CÔ GIÁO CHERRY" TRÊN TRANG CHỦ + TRANG HƯỚNG DẪN — ĐÃ DEPLOY
+
+- **Chủ dự án**: "cần 1 nhân vật vui vui để xếp TKB… tạo chibi bằng meshy.ai"; ban đầu muốn Ran Mori (Conan) rồi Aemeath (Wuthering Waves), kể cả "na ná đổi quần áo" — Claude từ chối
+  (nhân vật có bản quyền của hãng khác) và làm NHÂN VẬT MỚI: cô giáo chibi tóc nâu dài buộc nơ đỏ, kẹp tóc quả cherry, áo dài trắng viền đỏ, cầm bảng TKB + que chỉ.
+  Chủ dự án chọn "Hình 2" trong 4 phương án, rồi chọn đặt ở "Trang chủ + Hướng dẫn".
+- **Nguồn** (`scratch/linh-vat/`, gitignored): meshy.ai → công cụ Hình ảnh (model Nano Banana Pro, 36 credit/4 hình, tài khoản chủ dự án đăng nhập trong trình duyệt của Claude);
+  `co-giao-cherry-1..4.png` là 4 hình gốc. `make_mascot.py` (PIL + numpy) xử lý hình 2: vẽ lại mặt bảng bằng chữ Việt ("THỜI KHÓA BIỂU", T2–T7, tiết 1–5) rồi nắn phối cảnh vào khung
+  bảng (hình gốc ghi "TIMETABLE/Mon/Tue"), tách nền trắng bằng loang từ 4 góc (áo dài trắng không bị thủng) → `cherry-mascot.png` (~660×910, nền trong suốt), `-512`, `-256`.
+- **Web**: `web/assets/mascot/cherry-teacher.png` (378×512, 212 KB); `web/about/about.css` thêm khối `.ab-mascot` / `.ab-mascot-img` / `.ab-mascot-say` (hình 132 px + bong bóng lời thoại,
+  104 px dưới 860 px); `web/index.html` đặt dưới hàng nút của hero ("Chào thầy cô, mình là Cherry! Xem video 14 phút…" → `/huong-dan`); `web/huong-dan/index.html` hero thành 2 cột
+  (`.hd-hero-row`: chữ trái, linh vật phải; điện thoại xếp dọc). Cả hai trang đổi `about.css?v=20261124-mascot-v1`.
+- **Deploy** (`scratch/huongdan-deploy/run_mascot.py`): preflight 3 file cũ = HEAD, backup `/root/tkb-backups/mascot-20261124/`, không restart. Live sha: index `f3afec5c2623f83f`,
+  huong-dan `1fbc187a95930598`, about.css `3f8a86281494eee1`, hình `c46c0b8516e041b9`. Kiểm live (Playwright 1366 + 390 px, `/` và `/huong-dan`): hình nạp đủ, không tràn ngang, 0 lỗi JS.
+  Test không chạy lại (chỉ HTML/CSS/hình tĩnh của trang công khai).
+- **Chưa làm**: linh vật trong phần mềm (thẻ thông báo, hộp video), trong video; mô hình 3D; các dáng khác. Lời thoại trong bong bóng do Claude viết, chủ dự án chưa duyệt chữ.
+
 ## 2026-11-24 VIDEO HƯỚNG DẪN BẢN 4 — GIỌNG "RAN" (MINIMAX AUDIO, GIỌNG NHÂN BẢN CỦA CHỦ DỰ ÁN) — ĐÃ DEPLOY
 
 - **Chủ dự án**: giọng edge-tts "hơi gò bó" → nghe 4 mẫu edge-tts không chọn, bảo dùng giọng **Ran** trong My Voices của tài khoản MiniMax Audio (minimax.io/audio, giọng
