@@ -9,6 +9,19 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-24 TRANG /huong-dan THÊM MỤC "CHERRY AGENT" + "MỘT SỐ TRƯỜNG HỢP ĐẶC BIỆT" — ĐÃ DEPLOY
+
+- **Chủ dự án**: "bạn nên ghi rõ chỗ sử dụng cái đặt agent rồi 1 số trường hợp đặc biệt của các trường". Claude hiểu là viết thành CHỮ trên trang Hướng dẫn
+  (video giữ nguyên, chưa có đoạn nào về Agent); danh sách trường hợp do Claude chọn từ các tình huống đã gặp khi xếp cho các trường — CHỜ chủ dự án duyệt/bổ sung.
+- `web/huong-dan/index.html` (chỉ file này): 2 nút nhảy dưới video (`.hd-jump`), mục `#agent` (4 hộp: công tắc Agent ở đâu + ý nghĩa chấm màu trên nút Cherry; cài
+  Cherry.exe 3 bước; khi Chrome hỏi / chặn; tắt Agent để xếp trên máy chủ + ô ⏱ + Dừng) và mục `#truong-hop-dac-biet` (12 thẻ: 2 cơ sở, lớp nghỉ buổi/tiết, môn chỉ
+  học chiều, dạy ghép, GV thỉnh giảng/kiêm nhiệm, tiết cố định, tiết đôi + ra chơi, giới hạn tiết/ngày, môn tránh tiết, phòng có hạn, còn tiết Chưa phân, liên hệ).
+  Chữ lấy nguyên từ giao diện: hộp cài đặt trong `tkb-rust-bridge.js`, tên luật trong `shared/constraints-meta.js`, nhóm menu trong `tkb-constraints-menu.js` —
+  **đổi tên luật / chữ hộp Agent thì sửa cả trang này**. Không nêu tên trường thật. Theo chỉ đạo 31/10 không viết "máy mạnh / máy yếu".
+- Deploy 24/11 (runner `scratch/huongdan-deploy/run_doc_sections.py`): preflight remote = HEAD, backup `/root/tkb-backups/huongdan-doc-sections-20261124/`, không restart;
+  live sha `a4262eb5ada16b1e`, `/api/health` 200. Kiểm bố cục bằng Playwright trên bản local (1366 và 390 px: không tràn ngang, 0 lỗi JS, nút nhảy tới đúng mục).
+  Chưa đối chiếu từng thẻ bằng cách bấm thật trong app (chỉ đối chiếu với mã nguồn); test không chạy lại (chỉ đổi HTML tĩnh).
+
 ## 2026-11-24 THÔNG BÁO + NÚT "HƯỚNG DẪN" XEM VIDEO NGAY TRONG APP — ĐÃ DEPLOY
 
 - **Chủ dự án**: "tôi muốn có 1 thông báo khi người dùng vào họ vẫn thấy được video hướng dẫn này trong giao diện app".
