@@ -11,7 +11,7 @@
   if(window.TKBGuide) return;
 
   var NOTICE_KEY = "TKB_GUIDE_NOTICE_V1";
-  var VERSION = "20261124d";
+  var VERSION = "20261124e";
   var CHAPTERS = [
     [0, "Giới thiệu"],
     [24, "Bước 1 · Đăng ký, đăng nhập"],

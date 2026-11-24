@@ -40,6 +40,27 @@
   Luật Lộc thứ 4, HT–Trâm, hậu tố ngoài NT, ≤3 sân không biểu diễn được trong Yêu cầu của app → bấm Cherry/Tối ưu trên kho này có thể phá; sửa thì chạy lại `nh3_lns.py`.
   Test không chạy (chỉ dữ liệu trường + file docs).
 
+## 2026-11-24 VIDEO HƯỚNG DẪN BẢN 5 — LINH VẬT TRONG VIDEO, HIỆU ỨNG, SỬA 14 KHUNG ĐỎ — ĐÃ DEPLOY
+
+- **Chủ dự án**: "thật ra tôi muốn chèn nhân vật vào video, bạn rà soát lại khúc bạn đóng khung đỏ có nhiều chi tiết chưa chính xác, tôi muốn bạn thêm hiệu ứng cho đẹp".
+- **Rà khung đỏ**: xem lại cả 67 câu có khung (dàn ảnh `scratch/video_huongdan/explore/hl/`), sửa 14 chỗ khoanh lệch lời nói bằng `fix_hl.py` (bản gốc giữ ở `scenes_*.prefix.json`):
+  thanh bảng dữ liệu (trước chỉ khoanh nút Dạy ghép), 3 ô Thêm nhanh lớp (trước khoanh nhầm ô Địa điểm), cột Số tiết, hàng nút lọc khối + ô đang sửa, danh sách lớp + khung Thêm nhanh,
+  nửa trên/nửa dưới trang Sắp xếp, hàng tiết 5 + cột thứ 7 (ô Nghỉ), cột Min của tiết xếp liền, cột "Học buổi sáng", cả 3 nút ▶/Cherry/Tối ưu, dòng Đã xếp/Chưa xếp, chỉ nút Hoàn tác
+  (trước khoanh cả nút Làm lại), thẻ "Phiên bản thời khóa biểu". Toạ độ sửa tay theo px CSS của ảnh 1280×660.
+- **Bộ dựng mới `build2.py`** (thay `build.py`, vẫn import hàm vẽ thẻ/con trỏ/đo thời lượng từ đó): mỗi câu sinh từng khung hình bằng PIL rồi đẩy thẳng vào ffmpeg (rawvideo qua stdin),
+  đoạn dựng ở `seg_fx/`. Hiệu ứng: chuyển cảnh mờ dần 8 khung; nền tối dần + khung đỏ thu từ lớn về đúng cỡ (có viền mờ ngoài); con trỏ lướt từ vị trí câu trước tới đích rồi có vòng "bấm";
+  **linh vật cô giáo Cherry** (`scratch/linh-vat/cherry-mascot.png`) nhún nhẹ chu kỳ 32 khung ở góc phải dưới (cao 232 px, thanh phụ đề chừa 190 px); ở thẻ chữ linh vật lớn (560 px) trượt vào từ phải.
+  Mặc định dùng giọng Ran (`ran/<cảnh>_<nn>.mp3`), `--edge` để dùng edge-tts, `--only <cảnh>` ra `out/preview.mp4`. Đổi `VER` trong file để dựng lại tất cả. Cả video dựng ~12 phút.
+- **Kết quả**: thời lượng và mốc chương KHÔNG đổi (13'32", lời và giọng giữ nguyên) nên trang chỉ đổi `?v=20261124e` (`web/huong-dan/index.html`, `VERSION` trong `web/shared/guide-notice.js`).
+  File gốc 86 MB (preset veryfast) → bản web nén lại `libx264 -preset slow -crf 25`, âm thanh mono 96k: **50,5 MB** (bản 4 là 28 MB; nặng hơn vì linh vật chuyển động liên tục). Bản 4 giữ ở `out/huong-dan-tkbcherry.v4.mp4`.
+- **Deploy** (`scratch/huongdan-deploy/run_video_v5.py` + `nginx_media.py`): video sha `a24dfb1fd073909b`; preflight 2 file web = HEAD; backup `/root/tkb-backups/huongdan-video-v5-20261124/`; không restart.
+  Live sha: guide-notice `e6226dfcbb945b48`, huong-dan `bd919f60b6035d2e`. Kiểm live (Playwright 1366 + 390 px): bấm "Bước 8" → 6:08 và phát, thời lượng 812 s, 0 lỗi JS.
+  Claude chỉ kiểm được bằng khung hình trích ra (không xem được chuyển động liên tục, không nghe được tiếng).
+- **Gói cước (chưa làm)**: cùng tin nhắn, chủ dự án yêu cầu bỏ Max 2, còn một gói Max 1.000.000/năm cho mọi trường, kích hoạt +365 ngày, đang cho dùng thử miễn phí. Chị chọn tách phiên riêng nhưng
+  bản mô tả việc gửi sang phiên đó bị bộ kiểm quyền chặn 2 lần → phiên mới CHƯA nhận việc. Ghi chú tra mã sẵn ở `scratch/goi-cuoc/brief.md` (PLANS/ACTIVATION_GRANT trong `web/shared/auth.js`,
+  `web/school-portal.js`, `web/super-admin.js`, `MAX1_CLASS_LIMIT` + cấp gói khi xác thực email trong `rust_api/src/main.rs`; kích hoạt hiện đã là max2 + 365 ngày, chữ "30 ngày" còn sót ở
+  `web/index.html` và `web/school-portal.html`). Bỏ giới hạn 39 lớp phải sửa + restart dịch vụ Rust.
+
 ## 2026-11-24 LINH VẬT "CÔ GIÁO CHERRY" TRÊN TRANG CHỦ + TRANG HƯỚNG DẪN — ĐÃ DEPLOY
 
 - **Chủ dự án**: "cần 1 nhân vật vui vui để xếp TKB… tạo chibi bằng meshy.ai"; ban đầu muốn Ran Mori (Conan) rồi Aemeath (Wuthering Waves), kể cả "na ná đổi quần áo" — Claude từ chối
