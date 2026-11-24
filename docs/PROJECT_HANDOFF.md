@@ -154,6 +154,23 @@ phải có tiết chính khoá (ai không học thì về); các lớp cùng kh�
   Hai lượt chạy song song từ cùng một lưới (K7 / K8 rời nhau) rồi GHÉP theo lớp (`s_merge.json`, 1 trùng GV → lượt thường tự gỡ), sau đó
   lượt thường `NOSING="ST.3,ST.Khải,ST.Duy"` K=4 SUB=10 300 s (19 → 6) + 2 lượt `FORCE_T` nhắm GV còn buổi 1 tiết (6 → 5 → 3).
   Bài học: đừng kết luận "bất khả" từ lượt FEASIBLE ngắn — chỉ nói thế khi CP-SAT trả OPTIMAL; vùng cả khối 8 lớp cần ~4 phút.
+- **24/11 chiều — LUẬT MỚI của chủ dự án: "Tin quốc tế là buổi chiều nhé" + "Tiếng Anh tăng cường cũng xuống chiều luôn"** (hỏi tiếp sau câu
+  "vẫn còn 3 tiết lẻ có cách nào xử lý triệt để không"). → `base16.json` = `base15` + `subject.THQT/TATC.byClass[*].sessionAllowed.allowMorning
+  = false` (cả 4 môn LK giờ cấm buổi sáng; 10 buổi sáng "trọn liên kết" TATC+THQT của `final17` không còn hợp lệ).
+  **BẢN XEM THỬ đã ghi `prev19.json` = `live_p19.json` (`_updatedAt` 1795505274187, `apply.py` EXPECT = `live_p19.json`) — CHƯA PHẢI BẢN
+  CUỐI:** 1249 tiết đủ, sáng lớp nào cũng 4 tiết chính khoá, 0 tiết LK buổi sáng, 0 trùng GV; **RB Node 5 thông báo = 2 lỗi** (THQT 8/5
+  chưa đôi; TN.Quang 4 tiết chiều T4, `maxPeriods` = 3); GV 424 buổi / **16 buổi 1 tiết** / 45 trống 1 / 0 trống 2; **ra về lệch 9 lớp**
+  (6/1, 6/3, 6/4, 6/6, 6/7, 7/1, 7/2, 7/6, 8/3); 12 chiều T5/T6 chỉ 1 tiết CK. Bản tốt trước khi đổi luật: `final17.json`/`live_f17.json`
+  (3 buổi 1 tiết, lệch 4 lớp, RB 0) — giữ để quay về nếu chủ dự án đổi ý.
+  Vì sao khó: (1) mỗi lớp K6/K7 có 8 tiết LK phải nằm hết cuối các buổi chiều (9 tiết CK chiều) — gần như không còn tự do; TQT.Dũng
+  16 tiết/18 ô chiều (8 tiết đôi trên đúng 8 chỗ đặt được); (2) **sáng T3**: 27 GV chính khoá nghỉ cả buổi, số còn lại dạy tối đa 142 tiết
+  cho 140 ô lớp (dư 2) — `morn_bound.py BASE` chứng minh 700/700 ô sáng lấp được (nới lỏng), và cuối cùng lấp được thật bằng `FORCE`
+  quanh lớp bị trống + lớp của GV còn rảnh sáng T3 (lỗ trống cứ dời 8/5 → 9/1 → hết).
+  Đã chứng minh OPTIMAL: riêng K8 (khối khác giữ nguyên) không tạo được tiết đôi THQT 8/5; riêng 7/3 + 7/6 không gỡ được TN.Quang
+  (chỉ dạy chiều T3/T4/T6, ≤3 tiết/buổi, 8 tiết KHTN). K7 cả khối 200 s + vùng liên khối `NEIGH_T` 290 s: chưa gỡ, CHƯA chứng minh.
+  Trình tự đã chạy: REPAIR 23 lớp K6–8 480 s (hết `morning_forbidden`, còn 11 tiết thiếu) → REPAIR LNS K=8–14 (11 → 0 thiếu) → FORCE
+  sáng T3 → lượt thường K=4 SUB=10 (51 → 19 buổi 1 tiết) → +2 lượt (16). Việc còn lại: 2 lỗi luật, `NOSING` cho ST.3/ST.Khải/ST.Duy
+  (đang lại có buổi 1 tiết), kéo `dis` 15 xuống.
 
 ## 2026-11-24 TRANG /huong-dan + VIDEO HƯỚNG DẪN 9 BƯỚC TRÊN tkbcherry.com — ĐÃ DEPLOY
 
