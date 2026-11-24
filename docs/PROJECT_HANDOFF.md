@@ -234,6 +234,8 @@ phải có tiết chính khoá (ai không học thì về); các lớp cùng kh�
   tiết/vi phạm (40–120 s vùng GV; 280–290 s cả K6, cả K7, K6+K7) — CHƯA chứng minh. **Bẫy:** `NOSING` cứng + tiết chưa xếp chỉ là phạt mềm
   ⇒ bộ xếp "gỡ" buổi 1 tiết bằng cách bỏ rơi chính tiết đó (`unpl=1`, vẫn in OPTIMAL và `viol` sạch) — phải kiểm `unpl` trước khi tin
   (em đã báo nhầm ST.Duy/TA.Ni "gỡ được, chỉ lệch ra về" rồi đính chính). REPAIR + NOSING một GV thì đẩy tiết lẻ sang GV khác (8 → 10).
+  Hỏi "cho TATC học cùng buổi với TABN ở các lớp còn tiết lẻ để ép tiếp?" → chủ dự án 24/11: **"Không, giữ bản chốt"** — KHÔNG nới luật
+  nhóm Anh/TATC/TABN, `live_p22.json` vẫn là bản dùng với 8 buổi 1 tiết; đừng tự chạy ép lại.
 
 ## 2026-11-24 TRANG /huong-dan + VIDEO HƯỚNG DẪN 9 BƯỚC TRÊN tkbcherry.com — ĐÃ DEPLOY
 
