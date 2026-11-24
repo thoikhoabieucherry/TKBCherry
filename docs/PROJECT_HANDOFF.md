@@ -285,6 +285,19 @@ phải có tiết chính khoá (ai không học thì về); các lớp cùng kh�
   Đã thử mà KHÔNG ra bản sạch (FEASIBLE còn vi phạm, chưa chứng minh): K6/K7/K8 trọn khối lượt thường 230–280 s × 20 luồng; `rp.py`
   230 s mỗi ca (Giang + K8: thừa 1 `two_sess` + 1 `block_miss`; Trang + 6/5 + K7: phải `same_session`; Hoàng/Thảo1 + K7 + 4 lớp K6;
   ST.3 + K7). Excel "lan 5" xuất lại từ `live_p23.json`.
+- **24/11 ~20:15–21:10 — chủ dự án: "Chạy lượt dài" + "bạn xử lý và cố định các môn liên kết giúp tôi" → KHO = `prev25.json` =
+  `live_p25.json` (`_updatedAt` 1795524402111, `apply.py` EXPECT = `live_p25.json`): 6 buổi 1 tiết, 226 ô LK ĐÃ CỐ ĐỊNH.**
+  Lượt dài (`rp.py`, env `RP_WORKERS`, `RP_TMP` để chạy 2 ca song song trên 2 khối rời nhau; `merge_cls.py` ghép theo lớp):
+  chặng 1 880 s × 10 luồng — **TN.Giang + K8 + 9/9: OPTIMAL sạch → NHẬN (7 → 6)** = `la.json` (các lượt 230 s trước đó chỉ FEASIBLE còn
+  vi phạm ⇒ ca "sát" cần ~15′, không phải 4′); ST.3 + K7: FEASIBLE rơi 2 tiết → bỏ. Chặng 2 440 s × 10 luồng mỗi ca: TO.Hoàng + K7,
+  TO.Thảo1 + K7, ST.Duy + K6, TA.Trang + K6 — đều FEASIBLE còn vi phạm → bỏ (chưa chứng minh). REPAIR không tối ưu tiết trống: trống 1
+  tiết 38 → 42; lượt dọn `NOSING=<GV ổn>` 240 s không giảm được (0 nhận) — và lượt thường nhận cả nước ĐỒNG điểm nên `OUT` có thể khác
+  `START` dù "accepted=0": đừng ghi `OUT` đó lên kho. `pin_lk.py IN OUT`: mọi ô TATC/TABN/THQT/STEM (kể cả dòng ghép, từng lớp) →
+  `{fixed: true, mon}`; 78 ô cố định cũ (HĐTN-HN sáng T2…) giữ nguyên; tổng 304 ô cố định. Sau khi cố định: RB Node vẫn đúng 5 dòng (2 chỗ
+  đã chấp nhận), 0 trùng GV, đủ 1249 tiết, lưới không đổi so với `prev24`. CHƯA mở trang Sắp xếp để nhìn (mở trang có thể tự lưu đè kho).
+  **Hệ quả cần nhớ:** LK đã cố định ⇒ THQT 8/5 (2 tiết rời) và mọi tiết lẻ dính ô LK (ST.3 ×2, ST.Duy, TA.Trang) không gỡ được nữa nếu
+  không bỏ cố định trước; các lượt `h10_lns` sau phải dùng kho này làm BASE (S.fixed đọc từ lưới) hoặc bỏ cờ `fixed` của LK khi cần dời.
+  Còn 6: ST.3 ×2, ST.Duy, TA.Trang, TO.Hoàng, TO.Thảo1. GV 419 buổi / 42 trống 1 / 0 trống 2; ra về T2–T4 lệch 6 lớp.
 
 ## 2026-11-24 TRANG /huong-dan + VIDEO HƯỚNG DẪN 9 BƯỚC TRÊN tkbcherry.com — ĐÃ DEPLOY
 
