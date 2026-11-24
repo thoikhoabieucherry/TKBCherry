@@ -47,7 +47,7 @@
 
 - **Chủ dự án** (2 tin nhắn 24/11): "Bỏ gói Max 2 để thành gói Max 1.000.000 cho tất cả các trường trong 1 năm. Khi kích hoạt thì thời gian sẽ cộng 365 ngày thay vì chỉ 30 ngày. Hiện tôi cho
   thầy cô trải nghiệm free" và "gói Plus vẫn giữ… Gói Max 1 và Max 2 giờ thành 1 là gói năm. Ai đăng ký Max 2 cứ để Max giữ nguyên hạn, ai hạn dưới 30 ngày thì + thêm cho họ 365".
-  Câu "vì năm sau mới thu phí nên tạm thời vẫn để là Trial (gói này coi như sau này ai hết hạn sẽ về đây)" CHƯA rõ nghĩa — đã hỏi lại, chưa làm gì theo câu này.
+  Câu "vì năm sau mới thu phí nên tạm thời vẫn để là Trial (gói này coi như sau này ai hết hạn sẽ về đây)" CHƯA rõ nghĩa — đã hỏi lại, chưa làm gì theo câu này. **25/11 chủ dự án chốt: "kích hoạt xong lên Max 365 ngày luôn"** → giữ như đang chạy, không đổi tên gói thành Trial.
 - **Phát hiện**: thay đổi 04/09 (kích hoạt 365 ngày) có trong git nhưng CHƯA BAO GIỜ lên live — live `web/shared/auth.js` (bản 23/08) vẫn cấp 30 ngày và Rust trên VPS (nguồn 25/08, binary build
   21/11) chỉ nhận hạn kích hoạt ≤31 ngày. Nên KHÔNG được đưa `auth.js` mới lên trước khi Rust được build lại: client xin 365 ngày thì server cũ bỏ qua, trường kích hoạt xong không được gói nào.
 - **Mã đã sửa (chỉ giao diện)**: `web/shared/auth.js` — `MAX_PLAN_PRICING` còn 1 bậc (`id:"from-40-classes"`, `planId:"max2"`, 1.000.000, nhãn "Max"; giữ id cũ vì Rust coi đúng cặp này là
