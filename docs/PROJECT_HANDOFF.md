@@ -9,6 +9,25 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-24 VIDEO HƯỚNG DẪN BẢN 4 — GIỌNG "RAN" (MINIMAX AUDIO, GIỌNG NHÂN BẢN CỦA CHỦ DỰ ÁN) — ĐÃ DEPLOY
+
+- **Chủ dự án**: giọng edge-tts "hơi gò bó" → nghe 4 mẫu edge-tts không chọn, bảo dùng giọng **Ran** trong My Voices của tài khoản MiniMax Audio (minimax.io/audio, giọng
+  Instant Clone, model `speech-2.8-hd`, 1 credit/ký tự). Lời thuyết minh GIỮ NGUYÊN, chỉ đổi giọng; hình và thứ tự cảnh không đổi.
+- **Cách làm** (`scratch/video_huongdan/`): `ran/texts.json` = lời từng cảnh, các câu nối bằng thẻ nghỉ `<#1.5#>`; mỗi CẢNH tạo một lần trên trang Text to Speech (≤5.000 ký tự),
+  lấy `audio_url` (CDN `cdn.hailuoai.video`, tải thẳng không cần đăng nhập) từ phản hồi `/v1/api/audio/details`; `ran_split.py <cảnh> <url>` tải về và cắt theo quãng lặng ≥1,1 s
+  (`silencedetect`, kiểm số quãng = số câu − 1) thành `ran/<cảnh>_<nn>.mp3`; `build.py --ran` dùng các file đó thay edge-tts, đoạn dựng nằm ở `seg_ran/` (bản edge-tts vẫn còn ở `seg/`).
+  Tổng 13 cảnh / 105 câu / ~14.400 ký tự. Bản 3 (edge-tts) giữ ở `out/huong-dan-tkbcherry.v3.mp4`.
+- **Bẫy thao tác**: làm trong trình duyệt của Claude (chủ dự án đăng nhập sẵn); Claude in Chrome gõ vào ô soạn thảo của MiniMax là treo tab (3 lần). Xoá ô nhập bằng nút tẩy cạnh bộ
+  đếm ký tự rồi mới gõ — Ctrl+A/Delete có lúc không ăn, chữ mới chèn vào giữa chữ cũ (hỏng 1 lượt ~4.900 credit, phải tạo lại Bước 8). Luôn xem bộ đếm ký tự trước khi bấm Generate.
+  Tài khoản từ 84.271 còn ~64.000 credit sau cả việc.
+- **Kết quả**: video 13'32" (812 s) — giọng Ran đọc nhanh hơn. Mốc: Giới thiệu 0:00, B1 0:24, B2 0:45, B3 1:40, B4 2:17, B5 2:54, B6 3:40, B7 4:07, B8 6:08, B9 8:33, Cherry Agent 9:35,
+  Trường hợp đặc biệt 10:48, Tổng kết 13:18. Web: `?v=20261124d`, mốc mới trong `web/huong-dan/index.html` + `web/shared/guide-notice.js`, chữ "14 phút" (cả `web/index.html`).
+- **Deploy**: video 28.491.723 byte sha `3b9d7dcc5899c1d7`; 3 file web qua `scratch/huongdan-deploy/run_video_v4.py` (preflight = HEAD), backup `/root/tkb-backups/huongdan-video-v4-20261124/`,
+  không restart. Live sha: guide-notice `66fe9e270d214d99`, huong-dan `8af5d99ad4a53ac5`, index `7570e8141c1a1800`. Kiểm live (Playwright 1366 + 390 px): 13 mốc, bấm "Trường hợp đặc biệt"
+  → 10:48 và phát, thời lượng 812 s, 0 lỗi JS. **Claude không nghe được âm thanh**: chưa ai nghe trọn bản mới (phát âm "Che-ri chấm e xê", "tê ca bê", tên tiếng Anh; chỗ cắt câu).
+- **Linh vật chibi**: chủ dự án muốn chibi Ran Mori (Conan) / Aemeath (Wuthering Waves) bằng meshy.ai — Claude từ chối vì là nhân vật có bản quyền của hãng khác (kể cả "na ná đổi quần áo"),
+  đề xuất nhân vật mới theo phong cách anime chibi (cô giáo nhỏ kẹp tóc cherry). CHƯA làm, chờ chủ dự án chốt.
+
 ## 2026-11-24 VIDEO HƯỚNG DẪN BẢN 3 (17'17", ĐỦ 12 TRƯỜNG HỢP ĐẶC BIỆT) — ĐÃ DEPLOY
 
 - **Chủ dự án** (sau bản 2 chỉ nói 6/12 trường hợp): "đưa mấy cái đó vào clip chứ" → chương "Trường hợp đặc biệt" nay đi đủ 12 thẻ theo đúng thứ tự trang `/huong-dan`:

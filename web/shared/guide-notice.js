@@ -11,21 +11,21 @@
   if(window.TKBGuide) return;
 
   var NOTICE_KEY = "TKB_GUIDE_NOTICE_V1";
-  var VERSION = "20261124c";
+  var VERSION = "20261124d";
   var CHAPTERS = [
     [0, "Giới thiệu"],
-    [31, "Bước 1 · Đăng ký, đăng nhập"],
-    [61, "Bước 2 · Khối học, Lớp học"],
-    [131, "Bước 3 · Giáo viên"],
-    [179, "Bước 4 · Môn học, Tiết chuẩn"],
-    [227, "Bước 5 · Phân công"],
-    [289, "Bước 6 · Dạy ghép"],
-    [323, "Bước 7 · Yêu cầu"],
-    [480, "Bước 8 · Xếp TKB"],
-    [661, "Bước 9 · Chỉnh tay, in TKB"],
-    [742, "Cherry Agent"],
-    [837, "Trường hợp đặc biệt"],
-    [1018, "Tổng kết"]
+    [24, "Bước 1 · Đăng ký, đăng nhập"],
+    [45, "Bước 2 · Khối học, Lớp học"],
+    [100, "Bước 3 · Giáo viên"],
+    [137, "Bước 4 · Môn học, Tiết chuẩn"],
+    [174, "Bước 5 · Phân công"],
+    [220, "Bước 6 · Dạy ghép"],
+    [247, "Bước 7 · Yêu cầu"],
+    [368, "Bước 8 · Xếp TKB"],
+    [513, "Bước 9 · Chỉnh tay, in TKB"],
+    [575, "Cherry Agent"],
+    [648, "Trường hợp đặc biệt"],
+    [798, "Tổng kết"]
   ];
 
   function siteBase(){
@@ -207,7 +207,7 @@
     n.setAttribute("role", "status");
     n.appendChild(el("span", "gn-badge", "MỚI"));
     n.appendChild(el("div", "gn-title", "Video hướng dẫn xếp TKB"));
-    n.appendChild(el("p", "gn-text", "17 phút: 9 bước từ nhập liệu đến thời khóa biểu hoàn chỉnh, kèm Cherry Agent và các trường hợp đặc biệt. Lúc nào cần xem lại, bấm nút Hướng dẫn trên thanh công cụ."));
+    n.appendChild(el("p", "gn-text", "14 phút: 9 bước từ nhập liệu đến thời khóa biểu hoàn chỉnh, kèm Cherry Agent và các trường hợp đặc biệt. Lúc nào cần xem lại, bấm nút Hướng dẫn trên thanh công cụ."));
     var actions = el("div", "gn-actions");
     var watch = el("button", "gn-primary", "▶ Xem video");
     watch.type = "button";
