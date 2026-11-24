@@ -196,6 +196,22 @@ phải có tiết chính khoá (ai không học thì về); các lớp cùng kh�
   2 tiết đôi (2 cái sau FEASIBLE 250 s). Lượt thường `W_SG=3500 W_DIS=3000`: 16 → 10 buổi 1 tiết rồi đứng yên (2 lượt 10′ không giảm) —
   LNS đã chạm ngưỡng. Hướng còn lại cần chủ dự án quyết: chấp nhận 2 lỗi (cho TN.Quang 4 tiết chiều T4, THQT 8/5 2 tiết rời) hay nới
   ô nghỉ/giới hạn GV.
+- **24/11 ~16:25 — chủ dự án: "coi lại file pccm mới rồi chỉnh lại các phân công liên kết rồi chạy lại" → BẢN XEM THỬ `prev21.json` =
+  `live_p21.json` (`_updatedAt` 1795512315684, `apply.py` EXPECT = `live_p21.json`).** File `moi3/23.11-…-GỬI ÂN.xlsx` được sửa 16:00
+  24/11 (bản sao `scratch/hvl7/pccm2411.xlsx`), thêm sheet `Sheet1` "MÔN LIÊN KẾT" ghi rõ lớp riêng/lớp ghép + GV; trường đã xoá 2 file
+  THỐNG KÊ và file Excel xuất cũ khỏi `moi3`. So từng dòng với kho: **chỉ khác 1 chỗ — nhóm STEM 7/4+7/5+7/8 do STEM4 dạy** (kho để
+  ST.3). `build11.py IN OUT`: thêm GV `ST.4` (GV094, "STEM 4"), `DG929.gv = ['ST.4']` + 3 khoá `pccmMatrix` → `base17.json` (luật) và
+  `g0.json` (lưới f4). Các chỗ file tự mâu thuẫn, GIỮ như kho và đã báo chủ dự án: Sheet1 khối 6 ghi "6/1…6/5, 6/7" (thiếu 6/6) nhưng
+  sheet PCCM ghi cô Vương dạy 6/6 và Tin QT/STEM "6/1->6/7" (thống kê L2: 6/6 và 6/7 đều 38 HS, giữ nguyên lớp) → cả 6/6 lẫn 6/7 có
+  LK, 6/7 vẫn cô Vương; Sheet1 khối 9 bỏ trống cột TABN nhưng PCCM ghi "TATC,TABN" + Số tiết CT TABN K9 = 2 → giữ TABN K9; nhóm
+  "8/4+8/7 (Mỹ)" và "8/6+8/4 (Vương)" vẫn là 1 dòng ghép 3 lớp 2 GV cùng giờ (8/4 tách đôi). Chính khoá: danh sách lớp từng GV khớp
+  (cột tổng của file lệch ở SĐ.Tràng 17/20, TO.Hưởng 19/18 — file cộng sai, không sửa). Kho sống trước khi ghi chỉ khác bản p20 ở chỗ
+  app tự bỏ 11 khoá `pccmTietMatrix` `<lớp>|STEM` = '1' (bằng tiết chuẩn) — không phải chủ dự án sửa.
+  Chạy lại: K7 mở cả khối 300 s (lượt thường; REPAIR cùng lúc đổi `t_max_per` lấy lỗi khác → bỏ) → `FORCE_T` GV có buổi 1 tiết 240 s
+  = `h8.json`. Kết quả ghi: GV 422 buổi / **8 buổi 1 tiết** (ST.3, ST.4 — chỉ 1 tiết/tuần nên luôn là buổi 1 tiết, ST.Duy, TA.Ni,
+  TA.Trang, TN.Giang, TO.Hoàng, TO.Thảo1) / 38 trống 1 / 0 trống 2; **ra về lệch 9 lớp** (6/1, 6/2, 6/3, 6/7, 7/1, 7/6, 7/7, 8/3, 8/5);
+  **vẫn 2 lỗi RB cũ** (THQT 8/5, TN.Quang chiều T4). Lượt `W_DIS=4500` sau đó (`h9.json`, KHÔNG ghi) chỉ đổi ngược: 10 buổi 1 tiết /
+  8 lớp lệch — hai chỉ số đang đánh đổi nhau. Excel: `phancong/hovanlongchinh/moi3/TKB LIEN KET - TKB7 lan 5 (24-11-2026).xlsx`.
 
 ## 2026-11-24 TRANG /huong-dan + VIDEO HƯỚNG DẪN 9 BƯỚC TRÊN tkbcherry.com — ĐÃ DEPLOY
 
