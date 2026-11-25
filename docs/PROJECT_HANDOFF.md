@@ -9,6 +9,19 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-11-25 THCS Quang Trung TKB 6 (sid obo2ow4q6d6) lượt 2 — KNS 3/STEM 3 không còn buổi 1 tiết (8 lớp) — ĐÃ GHI vào kho
+
+- Trường phản hồi bản 23/11 (mục dưới): "STEM 3, KNS 3 tiết lẻ 1 buổi 1 tiết GV không thể đi được". Chủ dự án: "đưa các tiết bên các GV khác cho họ để lấp".
+- Kho trước khi sửa (`scratch/qt6/live6_b0.json`) = đúng bản đã ghi 23/11 (app chỉ lưu lại `meta` lúc 20:31). Nền mô hình `rules6b.json` = luật 23/11 + phân công
+  gốc + lưới hiện tại; giữ cứng 4 lớp đã chuyển (`--poolkeep`), ràng cứng 0 buổi 1 tiết cho MỌI GV (bỏ `--singleok`), không dời ghim (`--maxdrop 0`).
+- **Tối thiểu đã chứng minh (OPTIMAL):** phải chuyển thêm 4 lớp (tổng 8), 0 ghim dời. Chọn bộ cho lưới gọn nhất: KNS 8A5 (KNS 1), 9A5 (KNS 2) → `KNS 3`;
+  STEM 9A4, 9A5 (STEM 1) → `STEM 3`. Tổng: KNS 3 = 7A1, 8A5, 9A1, 9A5 (chiều T3 t3–4, chiều T4 t3–4); STEM 3 = 7A1, 8A2, 9A4, 9A5 (chiều T2 t2 + t4, trống t3; chiều T3 t3–4).
+- **Kết quả ĐÃ GHI 25/11 09:33** (`_updatedAt` 1795574006207, sao lưu `scratch/qt6/backup_obo2ow4q6d6_20261125-*_truoc-ghi.json`, kéo lại `live6_b_after.json` khớp 100%):
+  749/749, `verify6.py` 0 lỗi, RB Node 0, 0 ngày > 7 tiết, 0 ghim đổi. Mọi GV 273 buổi / **0 buổi 1 tiết** / 24 trống / 0 trống 2 (bản 23/11: 274/4/19);
+  GV trường 234/0/19 (trước 235/0/16). Đổi 385/749 ô so với bản 23/11 (`--wmove 1`; `--wmove 3` giữ thêm 21 ô nhưng 276 buổi).
+- Lệnh: `QT_LIVE=rules6b.json solve_qt6.py 720 … --pool "KNS=KNS 3;STEM=STEM 3" --poolpref/--poolkeep "7A1:KNS,9A1:KNS,7A1:STEM,8A2:STEM" --maxpool 8 --maxdrop 0
+  --wmove 1 --hint web_tkbP3.json --seed 5` (W2); `final6.py`/`verify6.py` nhận env `QT_BASE`, `QT_PINREF`, `QT_OUT`, `QT_REF`; ghi `apply6.py … --expect live6_b0.json --write`.
+
 ## 2026-11-24 `dtv4bw29lc3` THCS NGUYỄN HUỆ TKB 3 — PCCM THÁNG 12, XẾP LẠI TOÀN TRƯỜNG — ĐÃ GHI
 
 - **Chủ dự án**: "xem `phancong/thcs nguyen hue/moi`, xếp và tối ưu theo PCCM mới" cho `sid=dtv4bw29lc3` (TKB 3, bản sao TKB 2 tạo 24/11 17:13, áp dụng 30/11).
