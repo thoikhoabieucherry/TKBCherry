@@ -8,10 +8,10 @@ param(
     [string]$Region = 'asia-southeast2',
 
     [ValidatePattern('^[a-z][a-z0-9-]{0,61}[a-z0-9]$')]
-    [string]$ServiceName = 'tkb-solver',
+    [string]$ServiceName = 'cherry-solver',
 
     [ValidatePattern('^[a-z][a-z0-9-]{0,61}[a-z0-9]$')]
-    [string]$Repository = 'tkb-cloud-run',
+    [string]$Repository = 'cherry-images',
 
     [ValidateRange(1, 50)]
     # 22/08: 2 -> 1. Quota vung asia-southeast2 la 20 vCPU va Cloud Run tinh
@@ -39,7 +39,11 @@ param(
     [ValidatePattern('^[a-z]+(?:-[a-z0-9]+)+[0-9]$')]
     # 25/08 dem: quota MaxRegionsPerProject = 3 (Google tu choi nang) -> chi 2
     # vung phu ngoai asia-southeast2; them vung khac se bao "quota exceeded".
-    [string[]]$ExtraRegions = @('asia-southeast1', 'asia-east1'),
+    # 30/10/2026: project moi (cherrysoft, fakeruzi17) chi chay Jakarta, chua mo
+    # vung phu de khong lap lai mau "project moi bung 3 vung" bi Google khoa 23/10.
+    # Mo them vung: deploy-regions.ps1 hoac -ExtraRegions asia-southeast1,asia-east1
+    # (goi trong cung tien trinh, khong qua `powershell -File`).
+    [string[]]$ExtraRegions = @(),
 
     [string]$ProfilesOut = '',
 
@@ -583,7 +587,7 @@ if ($rolloutCpu -gt $RegionCpuQuota) {
 }
 
 $tag = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
-$image = "$Region-docker.pkg.dev/$ProjectId/$Repository/tkb-solver:$tag"
+$image = "$Region-docker.pkg.dev/$ProjectId/$Repository/$($ServiceName):$tag"
 
 Write-Host 'Submitting the solver image to Google Cloud Build (no local Docker installation is needed)...'
 $buildContext = New-MinimalCloudBuildContext -RepositoryRoot $repoRoot
@@ -630,7 +634,13 @@ $serviceUrl = ''
 $deploymentStarted = $false
 $canaryTagObserved = $false
 try {
-    Write-Host "Deploying private Cloud Run revision for '$ServiceName' with no canonical traffic..."
+    # First create cannot use --no-traffic (gcloud rejects it). Subsequent
+    # rollouts keep traffic on the old revision until canary passes.
+    if ($serviceExistedBefore) {
+        Write-Host "Deploying private Cloud Run revision for '$ServiceName' with no canonical traffic..."
+    } else {
+        Write-Host "Creating private Cloud Run service '$ServiceName' (first revision receives traffic + canary tag)..."
+    }
     $deployArguments = @(
         'run', 'deploy', $ServiceName,
         "--image=$image",
@@ -647,14 +657,16 @@ try {
         '--min-instances=0',
         "--max-instances=$deployMax",
         '--cpu-boost',
-        '--no-traffic',
         "--tag=$canaryTag",
         '--no-allow-unauthenticated',
-        '--labels=app=tkb-cherry,component=solver,runtime=cloud-run',
+        '--labels=app=cherry,component=solver,runtime=cloud-run',
         "--set-env-vars=TKB_CLOUD_RUN_QUIET=1,TKB_CLOUD_RUN_MAX_WORKERS=$Cpu,TKB_CPSAT_THREADS=$Cpu,TKB_CLOUD_RUN_MAX_SOLVE_SECONDS=285,TKB_CLOUD_RUN_SOLVER_DIGEST=$solverDigest",
         "--project=$ProjectId",
         '--quiet'
     )
+    if ($serviceExistedBefore) {
+        $deployArguments += '--no-traffic'
+    }
     if (-not [string]::IsNullOrWhiteSpace($RuntimeServiceAccount)) {
         $deployArguments += "--service-account=$RuntimeServiceAccount"
     }
@@ -713,14 +725,8 @@ try {
         throw 'Cloud Run returned no tagged canary URL.'
     }
 
-    Write-Host 'Running authenticated tagged health canary before traffic promotion...'
-    Invoke-AuthenticatedCloudRunCanary `
-        -CanaryUrl $canaryUrl `
-        -Audience $serviceUrl `
-        -ExpectedRevision $newRevision `
-        -ExpectedDigest $solverDigest `
-        -InvokerAccount $InvokerServiceAccount
-
+    # Grant invoker before canary: a brand-new project has no prior binding, so
+    # the impersonated SA would get 403 on /health if we waited until after.
     if (-not [string]::IsNullOrWhiteSpace($InvokerServiceAccount)) {
         Write-Host 'Granting the selected service account permission to invoke this service...'
         Invoke-Gcloud -Arguments @(
@@ -748,6 +754,14 @@ try {
             '--quiet'
         )
     }
+
+    Write-Host 'Running authenticated tagged health canary before traffic promotion...'
+    Invoke-AuthenticatedCloudRunCanary `
+        -CanaryUrl $canaryUrl `
+        -Audience $serviceUrl `
+        -ExpectedRevision $newRevision `
+        -ExpectedDigest $solverDigest `
+        -InvokerAccount $InvokerServiceAccount
 
     Write-Host "Promoting verified revision '$newRevision' to 100% canonical traffic..."
     Invoke-Gcloud -Arguments @(

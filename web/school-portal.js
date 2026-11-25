@@ -385,8 +385,8 @@
 
   const PLAN_RANK = { free: 0, plus: 1, max: 2, max1: 2, max2: 3, ultra: 4 };
   const MAX_PLAN_PRICING_FALLBACK = [
-    { id:"under-40-classes", planId:"max1", minClasses:1, maxClasses:39, label:"Max 1 · Dưới 40 lớp", detail:"Từ 1 đến 39 lớp", price:1000000 },
-    { id:"from-40-classes", planId:"max2", minClasses:40, maxClasses:null, label:"Max 2 · Từ 40 lớp", detail:"Không giới hạn số lớp", price:1500000 }
+    // 24/11/2026: một gói Max duy nhất 1.000.000 đ / năm cho mọi trường (không còn chia bậc theo số lớp).
+    { id:"from-40-classes", planId:"max2", minClasses:1, maxClasses:null, label:"Max", detail:"Mọi trường · không giới hạn số lớp", price:1000000 }
   ];
 
   let transferContentText = "";
@@ -418,6 +418,10 @@
 
   function maxPlanPricingHtml(){
     const tiers = maxPlanPricingTiers();
+    if(tiers.length <= 1){
+      // Một gói Max duy nhất: không còn bảng chọn theo số lớp; giữ ô ẩn để nút Đăng ký / Gia hạn dùng chung mã.
+      return `<input type="radio" name="max-plan-class-tier" value="${esc(tiers[0]?.planId || "max2")}" data-max-plan checked hidden>`;
+    }
     const selectedTier = selectedMaxPlanTier(maxPlanClassCountFromSchool());
     return `<div class="max-plan-pricing" role="group" aria-labelledby="maxPlanPricingTitle">
       <div class="max-plan-pricing-head">
@@ -471,7 +475,7 @@
     const bank = A.BANK_TRANSFER;
     const price = Number(selectedPricing?.price);
     const paymentPrice = Number.isFinite(price) && price > 0 ? price : Number(plan.price || 0);
-    const tierLabel = plan.id === "max1" || plan.id === "max2"
+    const tierLabel = (plan.id === "max1" || plan.id === "max2") && maxPlanPricingTiers().length > 1
       ? String(selectedPricing?.tier?.label || plan.label || "").trim()
       : "";
     transferContentText = A.transferContentForSchool(school);
@@ -578,16 +582,16 @@
     }else if(eff.expiredFrom === "trial"){
       banner = `<div class="portal-trial-banner is-expired">Gói Trial đã hết hạn, tài khoản đang ở gói Free. Nâng cấp Plus hoặc Max để dùng đầy đủ tính năng.</div>`;
     }else if(current === "free" && !user.emailVerified && !school.trialUsed){
-      // 22/08: kích hoạt = cấp gói Max 2 dùng thử (A.ACTIVATION_GRANT) thay vì Trial.
+      // 22/08: kích hoạt = cấp gói Max dùng thử (A.ACTIVATION_GRANT) thay vì Trial.
       const grant = A.ACTIVATION_GRANT || {planId: "max2", durationDays: 365};
-      const grantLabel = (A.PLANS?.[grant.planId] || {}).label || "Max 2";
+      const grantLabel = (A.PLANS?.[grant.planId] || {}).label || "Max";
       banner = `<div class="portal-trial-banner is-active">Xác thực email để nhận ngay <strong>${esc(String(grant.durationDays || 365))} ngày gói ${esc(grantLabel)} miễn phí</strong> (không giới hạn lớp và lượt xếp).</div>`;
     }
     root.classList.toggle("has-plan-banner", Boolean(banner));
     const planCards = ["free", "plus", "max"].map(id => A.PLANS[id]).filter(Boolean).map(p => {
       const isMaxCard = p.id === "max";
-      const selectedMaxTier = isMaxCard ? selectedMaxPlanTier(current === "max1" || current === "max2" ? current : maxPlanClassCountFromSchool()) : null;
-      const targetPlanId = isMaxCard ? (selectedMaxTier?.planId || "max1") : p.id;
+      const selectedMaxTier = isMaxCard ? selectedMaxPlanTier(current === "max2" ? current : maxPlanClassCountFromSchool()) : null;
+      const targetPlanId = isMaxCard ? (selectedMaxTier?.planId || "max2") : p.id;
       const targetPlan = A.PLANS[targetPlanId] || p;
       const isCurrent = isMaxCard ? (current === "max1" || current === "max2") : current === p.id;
       const selectedIsCurrent = current === targetPlanId;
@@ -612,11 +616,12 @@
           <h3>${esc(p.label)}</h3>
           ${isCurrent ? '<span class="plan-current-badge">Đang dùng</span>' : ""}
         </div>
-        <div class="price${p.id === "max" ? " max-plan-base-price" : ""}">${p.price ? (p.id === "max" ? `<span>Từ</span><strong>${esc(A.formatMoney(p.price))}</strong><small>/ năm</small>` : A.formatMoney(p.price)) : "Miễn phí"}</div>
+        <div class="price${p.id === "max" ? " max-plan-base-price" : ""}">${p.price ? (p.id === "max" ? `${maxPlanPricingTiers().length > 1 ? "<span>Từ</span>" : ""}<strong>${esc(A.formatMoney(p.price))}</strong><small>/ năm</small>` : A.formatMoney(p.price)) : "Miễn phí"}</div>
         <ul>
           ${p.id === "max" ? "<li>Hỗ trợ xếp TKB đầu tiên</li>" : ""}
           ${p.solveLimit ? `<li>Giới hạn ${esc(p.solveLimit)} lượt Xếp / Tối ưu</li>` : ""}
           ${p.id === "max" ? "<li>Không giới hạn lượt Xếp / Tối ưu</li>" : ""}
+          ${p.id === "max" ? "<li>Mọi trường, không giới hạn số lớp</li>" : ""}
           <li>${p.print ? "Được in / xuất TKB" : "Chỉ xếp TKB, không in"}</li>
           <li>${A.planDurationLabel ? A.planDurationLabel(p) : (p.durationDays ? p.durationDays + " ngày sử dụng" : "Không giới hạn thời gian")}</li>
         </ul>
@@ -637,7 +642,7 @@
           option.classList.toggle("is-selected", option.contains(selectedInput));
         });
         if(actionButton){
-          const planId = tier?.planId || "max1";
+          const planId = tier?.planId || "max2";
           const isSamePlan = current === planId;
           const isDowngrade = (PLAN_RANK[planId] ?? 0) < currentRank;
           actionButton.disabled = isDowngrade;

@@ -101,24 +101,18 @@
     periodLabel: "1 năm",
     dimension: "classes",
     thresholdClasses: 40,
+    // 24/11/2026 (chủ dự án): bỏ Max 2 — chỉ còn MỘT gói Max 1.000.000 đ / 1 năm cho mọi
+    // trường, không chia theo số lớp. Giữ id bậc "from-40-classes" + planId "max2" vì máy chủ
+    // (rust_api solver_plan_policy_for_school) coi đúng cặp này là không giới hạn số lớp.
     tiers: Object.freeze([
-      Object.freeze({
-        id: "under-40-classes",
-        planId: "max1",
-        minClasses: 1,
-        maxClasses: 39,
-        label: "Max 1 · Dưới 40 lớp",
-        detail: "Từ 1 đến 39 lớp",
-        price: 1000000
-      }),
       Object.freeze({
         id: "from-40-classes",
         planId: "max2",
-        minClasses: 40,
+        minClasses: 1,
         maxClasses: null,
-        label: "Max 2 · Từ 40 lớp",
-        detail: "Không giới hạn số lớp",
-        price: 1500000
+        label: "Max",
+        detail: "Mọi trường · không giới hạn số lớp",
+        price: 1000000
       })
     ])
   });
@@ -187,9 +181,11 @@
       color: "#22d3ee",
       glow: "0 0 16px rgb(34 211 238 / 55%)"
     },
+    // max1 = gói cũ (tối đa 39 lớp) của các trường đăng ký trước 24/11/2026; không còn bán.
     max1: {
       id: "max1",
-      label: "Max 1",
+      label: "Max 1 (cũ)",
+      legacy: true,
       price: 1000000,
       durationDays: 365,
       classLimit: 39,
@@ -198,10 +194,11 @@
       color: "#a855f7",
       glow: "0 0 18px rgb(168 85 247 / 58%)"
     },
+    // max2 = gói Max hiện hành (id nội bộ giữ nguyên để khớp máy chủ và dữ liệu cũ).
     max2: {
       id: "max2",
-      label: "Max 2",
-      price: 1500000,
+      label: "Max",
+      price: 1000000,
       durationDays: 365,
       unlimitedClasses: true,
       unlimitedSolves: true,
@@ -213,7 +210,7 @@
       id: "max",
       label: "Max",
       price: MAX_PLAN_PRICING.tiers[0].price,
-      priceByClasses: true,
+      unlimitedClasses: true,
       durationDays: 365,
       unlimitedSolves: true,
       print: true,
@@ -234,7 +231,7 @@
   };
 
   // 22/08 (chủ dự án): khi người dùng đăng ký và KÍCH HOẠT (xác thực email)
-  // thì cấp thẳng gói Max 2 dùng thử thay vì gói Trial. Vẫn chỉ cấp MỘT lần
+  // thì cấp thẳng gói Max (id nội bộ "max2") dùng thử thay vì gói Trial. Vẫn chỉ cấp MỘT lần
   // cho mỗi trường (cờ trialUsed). 04/09 (chủ dự án): hạn 1 NĂM (365 ngày)
   // thay vì 1 tháng; server (rust_api merge_school_admin_registry) chỉ chấp
   // nhận đúng gói này với hạn tối đa 366 ngày.
@@ -1683,7 +1680,7 @@
     const requestedClassCount = hasExplicitClassCount
       ? explicitClassCount
       : requestedPlanId === "max1"
-        ? MAX_PLAN_PRICING.tiers[0].maxClasses
+        ? 39
         : requestedPlanId === "max2"
           ? MAX_PLAN_PRICING.thresholdClasses
           : Number(school.classCount);
@@ -1693,7 +1690,7 @@
       ? Math.floor(requestedClassCount)
       : (Number.isFinite(legacyStudentCount) && legacyStudentCount > 1000
           ? MAX_PLAN_PRICING.thresholdClasses
-          : MAX_PLAN_PRICING.tiers[0].maxClasses);
+          : MAX_PLAN_PRICING.thresholdClasses);
     const maxPricingTier = maxPlanTierForClasses(classCount);
     const resolvedPlanId = requestedPlanId === "max"
       ? maxPricingTier.planId
@@ -1703,7 +1700,7 @@
       return {
         ok: false,
         kind: "max1_class_limit_exceeded",
-        message: "Gói Max 1 hỗ trợ tối đa 39 lớp. Vui lòng chọn Max 2 cho trường từ 40 lớp."
+        message: "Gói Max 1 (cũ) hỗ trợ tối đa 39 lớp. Vui lòng chọn gói Max cho trường từ 40 lớp."
       };
     }
     const paymentAmount = Number(plan?.price || 0);

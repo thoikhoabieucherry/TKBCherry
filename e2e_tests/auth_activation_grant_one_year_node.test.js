@@ -128,7 +128,7 @@ test("verifyAccountEmail grants Max 2 that expires ~365 days later, once per sch
   assert.equal(res.ok, true, res.message);
   assert.equal(res.trialGranted, true);
   assert.equal(res.grantedPlan, "max2");
-  assert.match(res.message, /Max 2 dùng thử 365 ngày/);
+  assert.match(res.message, /gói Max dùng thử 365 ngày/);
 
   const reg = savedRegistry();
   assert.ok(reg, "registry saved");
@@ -157,6 +157,11 @@ test("verifyAccountEmail grants Max 2 that expires ~365 days later, once per sch
 
 test("portal banner and Rust server cap agree on the one-year grant", () => {
   assert.match(portalSource, /A\.ACTIVATION_GRANT \|\| \{planId: "max2", durationDays: 365\}/);
+  // 24/11/2026: không còn chữ "30 ngày miễn phí" ở trang chủ và trang Quản lý trường.
+  for (const rel of ["web/index.html", "web/school-portal.html"]) {
+    const html = fs.readFileSync(path.join(__dirname, "..", rel), "utf8");
+    assert.doesNotMatch(html, /30 ngày miễn phí/);
+  }
   assert.match(portalSource, /grant\.durationDays \|\| 365/);
   assert.doesNotMatch(portalSource, /durationDays: 30\b|durationDays \|\| 30\b/);
 

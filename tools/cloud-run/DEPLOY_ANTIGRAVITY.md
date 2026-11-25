@@ -8,7 +8,7 @@
 - Engine: `solver_runtime/src/tkb_engine_v3/**` (Cherry, thuần Python; lane *1 tiết trống* / *Buổi dạy* dùng thêm CP-SAT LNS cần `ortools`).
 - `solve_stdio.py` định tuyến theo `settings.engine`: `cherry` → Cherry, để trống → bộ giải cũ.
 - Gói build của Cloud Run tự lấy **mọi file .py trong `solver_runtime/src`** ⇒ engine tự động vào image, KHÔNG cần sửa Dockerfile.
-- Cấu hình dịch vụ: region `asia-southeast2`, service `tkb-solver`, 6 vCPU / 4 GiB, timeout 300s, trần solver 285s, max instances 3, luôn `--no-allow-unauthenticated`.
+- Cấu hình dịch vụ: region `asia-southeast2`, service `cherry-solver`, 6 vCPU / 4 GiB, timeout 300s, trần solver 285s, max instances 3, luôn `--no-allow-unauthenticated`.
 
 ## 1. Điều kiện tiên quyết (kiểm tra, đừng bỏ qua)
 ```powershell
@@ -27,7 +27,7 @@ git status --short
 ## 2. Chạy thử khan (không deploy, chỉ dựng gói build và in digest)
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\cloud-run\deploy.ps1 `
-  -ProjectId project-61ee7855-507e-40a3-879 `
+  -ProjectId project-8ce8bf36-3ba7-430f-8f7 `
   -ValidateBuildContext
 ```
 Kỳ vọng: in ra JSON `{"ok":true,"files":...,"bytes":...,"solverDigest":"...","includesTests":false}`.
@@ -36,13 +36,13 @@ Nếu `ok` khác true hoặc báo file lạ trong gói build ⇒ **dừng lại 
 ## 3. Deploy thật
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\cloud-run\deploy.ps1 `
-  -ProjectId project-61ee7855-507e-40a3-879 `
+  -ProjectId project-8ce8bf36-3ba7-430f-8f7 `
   -ConfirmDeployment
 ```
 Nếu project đã có sẵn 2 service account thì thêm (không bắt buộc):
 ```powershell
-  -InvokerServiceAccount tkb-cloud-run-invoker@project-61ee7855-507e-40a3-879.iam.gserviceaccount.com `
-  -RuntimeServiceAccount tkb-cloud-run-runtime@project-61ee7855-507e-40a3-879.iam.gserviceaccount.com
+  -InvokerServiceAccount cherry-invoker@project-8ce8bf36-3ba7-430f-8f7.iam.gserviceaccount.com `
+  -RuntimeServiceAccount cherry-runtime@project-8ce8bf36-3ba7-430f-8f7.iam.gserviceaccount.com
 ```
 Script sẽ: bật API → tạo Artifact Registry nếu thiếu → build qua Cloud Build → deploy revision mới với
 `--no-traffic` + canary tag → tự gọi `/health` và một bài `/solve` tổng hợp → chỉ khi bài kiểm tra đạt
@@ -51,7 +51,7 @@ Thất bại ở bất kỳ bước nào → script tự rollback traffic về r
 
 ## 4. Sau khi deploy — 3 giá trị script in ra
 ```
-Service URL: https://tkb-solver-....run.app
+Service URL: https://cherry-solver-....run.app
 Solver digest: <sha256>
 TKB_CLOUD_PROFILE={"id":"cloud-run-...","projectId":"...","region":"asia-southeast2","url":"...","solverDigest":"...",...}
 ```
@@ -74,8 +74,8 @@ Việc phải làm:
 
 ## 6. Rollback thủ công (nếu cần)
 ```powershell
-gcloud run revisions list --service tkb-solver --region asia-southeast2 --project project-61ee7855-507e-40a3-879
-gcloud run services update-traffic tkb-solver --region asia-southeast2 --project project-61ee7855-507e-40a3-879 --to-revisions <REVISION_CU>=100
+gcloud run revisions list --service cherry-solver --region asia-southeast2 --project project-8ce8bf36-3ba7-430f-8f7
+gcloud run services update-traffic cherry-solver --region asia-southeast2 --project project-8ce8bf36-3ba7-430f-8f7 --to-revisions <REVISION_CU>=100
 ```
 
 ## 7. Lỗi hay gặp

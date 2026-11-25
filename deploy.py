@@ -13,7 +13,10 @@ mot cho, script that su nam trong tools/.
 Moi tham so phia sau ten lenh duoc chuyen thang cho script goc, vi du:
 
     python deploy.py cloudrun --max-instances 3 --no-vps
-    python deploy.py files web/pages/phanmon.js
+    python deploy.py files deploy my-backup --no-restart web/pages/phanmon.js
+
+PowerShell: dan MOT DONG (khong dung \\ xuong dong kieu bash — PowerShell se
+hieu \\ la ten file va crash FileNotFoundError 'C:\\').
 """
 from __future__ import annotations
 

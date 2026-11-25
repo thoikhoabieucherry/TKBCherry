@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hướng dẫn xếp thời khóa biểu — Cherry Scheduler</title>
+  <meta name="description" content="Video hướng dẫn từng bước xếp thời khóa biểu bằng Cherry Scheduler: nhập khối, lớp, giáo viên, môn học, phân công, đặt yêu cầu, xếp tự động, chỉnh tay và in." />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://tkbcherry.com/huong-dan" />
+  <meta property="og:type" content="video.other" />
+  <meta property="og:site_name" content="Cherry Scheduler" />
+  <meta property="og:title" content="Hướng dẫn xếp thời khóa biểu — Cherry Scheduler" />
+  <meta property="og:description" content="Video 14 phút: từ nhập dữ liệu đến thời khóa biểu hoàn chỉnh, qua 9 bước, kèm Cherry Agent và các trường hợp đặc biệt." />
+  <meta property="og:url" content="https://tkbcherry.com/huong-dan" />
+  <meta property="og:image" content="https://tkbcherry.com/assets/huong-dan/poster.jpg" />
+  <meta property="og:locale" content="vi_VN" />
+  <link rel="icon" type="image/png" href="/assets/favicon-cherry.png?v=2" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&amp;display=swap" />
+  <link rel="stylesheet" href="/about/about.css?v=20261124-mascot-v1" />
+  <style>
+    .hd-hero { padding: 40px 0 8px; }
+    .hd-hero h1 { margin: 6px 0 10px; font-size: clamp(1.7rem, 3.4vw, 2.4rem); line-height: 1.2; font-weight: 800; color: #0f172a; }
+    .hd-hero-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+    .hd-hero-text { min-width: 0; }
+    .hd-hero .ab-mascot { margin: 0; flex: none; }
+    .hd-hero .ab-mascot-say { max-width: 230px; font-size: .92rem; color: #0f172a; }
+    .hd-hero p { margin: 0; max-width: 62ch; color: #475569; font-size: 1.02rem; line-height: 1.65; }
+    .hd-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; align-items: start; padding-top: 28px; padding-bottom: 56px; }
+    .hd-player { background: #0b1220; border-radius: 14px; overflow: hidden; box-shadow: 0 18px 40px rgba(15, 23, 42, .18); }
+    .hd-player video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; background: #0b1220; }
+    .hd-note { margin: 14px 2px 0; color: #64748b; font-size: .92rem; line-height: 1.6; }
+    .hd-note a { color: #be123c; font-weight: 600; }
+    .hd-chapters { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 14px 12px; }
+    .hd-chapters h2 { margin: 0 6px 10px; font-size: 1.05rem; font-weight: 700; color: #0f172a; }
+    .hd-chapters ol { list-style: none; margin: 0; padding: 0; }
+    .hd-chapter { display: flex; gap: 12px; align-items: baseline; width: 100%; padding: 9px 8px; border: 0; border-radius: 8px; background: none; font: inherit; font-size: .95rem; color: #1e293b; text-align: left; cursor: pointer; }
+    .hd-chapter:hover, .hd-chapter:focus-visible { background: #fff1f2; outline: none; }
+    .hd-chapter[aria-current="true"] { background: #ffe4e6; font-weight: 600; }
+    .hd-chapter time { flex: none; min-width: 3.2em; font-variant-numeric: tabular-nums; color: #be123c; font-weight: 600; }
+    .hd-steps-title { margin-top: 0; }
+    .hd-jump { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 2px 0; }
+    .hd-jump a { display: inline-block; padding: 8px 14px; border: 1px solid #fecdd3; border-radius: 999px; background: #fff1f2; color: #9f1239; font-weight: 600; font-size: .92rem; text-decoration: none; }
+    .hd-jump a:hover { background: #ffe4e6; }
+    .hd-doc h2 { margin-top: 0; }
+    .hd-doc .hd-lead { max-width: 70ch; color: #475569; line-height: 1.65; margin: 0 0 18px; }
+    .hd-agent { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .hd-box { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 20px; }
+    .hd-box h3 { margin: 0 0 8px; font-size: 1.05rem; font-weight: 700; color: #0f172a; }
+    .hd-box p, .hd-box li { color: #334155; line-height: 1.65; font-size: .96rem; }
+    .hd-box p { margin: 0 0 8px; }
+    .hd-box ol, .hd-box ul { margin: 0; padding-left: 20px; }
+    .hd-box li + li { margin-top: 6px; }
+    .hd-cases { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .hd-case { background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #e11d48; border-radius: 12px; padding: 16px 18px; }
+    .hd-case h3 { margin: 0 0 6px; font-size: 1rem; font-weight: 700; color: #0f172a; }
+    .hd-case p { margin: 0; color: #334155; line-height: 1.65; font-size: .95rem; }
+    .hd-case p + p { margin-top: 6px; }
+    .hd-case a { color: #be123c; font-weight: 600; }
+    .hd-doc b { color: #0f172a; }
+    .hd-where { color: #9f1239; font-weight: 600; }
+    #agent, #truong-hop-dac-biet { scroll-margin-top: 80px; }
+    @media (max-width: 900px) {
+      .hd-layout { grid-template-columns: minmax(0, 1fr); gap: 20px; padding-bottom: 40px; }
+      .hd-hero { padding-top: 28px; }
+      .hd-hero-row { flex-direction: column; align-items: stretch; gap: 14px; }
+      .hd-agent, .hd-cases { grid-template-columns: minmax(0, 1fr); }
+    }
+  </style>
+</head>
+<body class="ab-page">
+  <a class="ab-skip" href="#noi-dung">Bỏ qua menu</a>
+
+  <div class="ab-topbar">
+    <div class="ab-container">
+      <div class="ab-topbar-contact">
+        <span>Điện thoại / Zalo: <a href="tel:+84352261815">0352 261 815</a></span>
+        <a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a>
+      </div>
+      <span class="ab-topbar-note">Hỗ trợ nhập dữ liệu cho trường mới</span>
+    </div>
+  </div>
+
+  <header class="ab-nav">
+    <div class="ab-container">
+      <a class="ab-brand" href="/">
+        <img src="/assets/cherry-scheduler-logo.png?v=2" width="34" height="34" alt="" />
+        <span>Cherry Scheduler</span>
+      </a>
+      <nav class="ab-nav-links" aria-label="Mục trên trang">
+        <a href="/#tinh-nang">Tính năng</a>
+        <a href="/#phan-mem">Phần mềm</a>
+        <a href="/huong-dan" aria-current="page">Hướng dẫn</a>
+        <a href="/#ve-chung-toi">Về chúng tôi</a>
+        <a href="/#lien-he">Liên hệ</a>
+      </nav>
+      <a class="ab-btn ab-btn-primary ab-btn-sm" href="/#authCard">Đăng nhập</a>
+    </div>
+  </header>
+
+  <main id="noi-dung">
+    <section class="hd-hero">
+      <div class="ab-container hd-hero-row">
+        <div class="hd-hero-text">
+        <p class="ab-kicker">Hướng dẫn sử dụng</p>
+        <h1>Xếp thời khóa biểu từ đầu đến cuối trong 9 bước</h1>
+        <p>Video khoảng 14 phút, quay trên chính phần mềm, đi từ lúc đăng nhập và nhập dữ liệu cho đến khi có thời khóa biểu hoàn chỉnh để in. Trường ví dụ là một trường THCS học hai buổi, 37 lớp, khoảng 100 giáo viên; tên giáo viên trong video là tên mẫu.</p>
+        </div>
+        <div class="ab-mascot">
+          <img class="ab-mascot-img" src="/assets/mascot/cherry-teacher.png?v=20261124" width="378" height="512" alt="Cô giáo Cherry, linh vật của Cherry Scheduler, cầm bảng thời khóa biểu" />
+          <p class="ab-mascot-say">Thầy cô xem video, chỗ nào chưa rõ thì kéo xuống phần chữ bên dưới nhé!</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="ab-container hd-layout">
+      <div>
+        <div class="hd-player">
+          <video id="hdVideo" controls playsinline preload="metadata" poster="/assets/huong-dan/poster.jpg?v=20261124">
+            <source src="/media/huong-dan-xep-tkb.mp4?v=20261124e" type="video/mp4" />
+            Trình duyệt của thầy cô không phát được video. Thầy cô có thể <a href="/media/huong-dan-xep-tkb.mp4?v=20261124e">tải video về máy</a>.
+          </video>
+        </div>
+        <p class="hd-note">Video có giọng đọc và phụ đề tiếng Việt. Bấm vào một mục ở danh sách bên cạnh để nhảy tới bước cần xem. Cần hỗ trợ thêm, thầy cô gọi hoặc nhắn Zalo <a href="https://zalo.me/0352261815" target="_blank" rel="noopener">0352 261 815</a>.</p>
+        <p class="hd-jump">
+          <a href="#agent">Cherry Agent: bật ở đâu, cài thế nào</a>
+          <a href="#truong-hop-dac-biet">Một số trường hợp đặc biệt của trường</a>
+        </p>
+      </div>
+
+      <aside class="hd-chapters" aria-label="Các bước trong video">
+        <h2>Nội dung video</h2>
+        <ol id="hdChapters">
+          <li><button type="button" class="hd-chapter" data-t="0"><time>00:00</time><span>Giới thiệu</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="24"><time>00:24</time><span>Bước 1 · Đăng nhập</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="45"><time>00:45</time><span>Bước 2 · Khối và Lớp</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="100"><time>01:40</time><span>Bước 3 · Giáo viên</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="137"><time>02:17</time><span>Bước 4 · Môn học và Tiết chuẩn</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="174"><time>02:54</time><span>Bước 5 · Phân công</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="220"><time>03:40</time><span>Bước 6 · Dạy ghép</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="247"><time>04:07</time><span>Bước 7 · Yêu cầu</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="368"><time>06:08</time><span>Bước 8 · Xếp tự động</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="513"><time>08:33</time><span>Bước 9 · Chỉnh tay, kiểm tra, in</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="575"><time>09:35</time><span>Cherry Agent</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="648"><time>10:48</time><span>Trường hợp đặc biệt</span></button></li>
+          <li><button type="button" class="hd-chapter" data-t="798"><time>13:18</time><span>Tổng kết</span></button></li>
+        </ol>
+      </aside>
+    </div>
+
+    <section class="ab-section ab-section--soft">
+      <div class="ab-container">
+        <div class="ab-head">
+          <p class="ab-kicker">Tóm tắt</p>
+          <h2 class="hd-steps-title">Thứ tự làm việc trong phần mềm</h2>
+        </div>
+        <ol class="ab-steps">
+          <li>
+            <h3>Nhập dữ liệu</h3>
+            <p>Nhập lần lượt Khối học, Lớp học, Giáo viên, Môn học, Tiết chuẩn, Phân công và Dạy ghép. Bảng nào cũng có Nhập Excel và Xuất Excel.</p>
+          </li>
+          <li>
+            <h3>Đặt yêu cầu</h3>
+            <p>Ở trang Sắp xếp, mở menu Yêu cầu để đánh dấu ô nghỉ, tiết cố định và các yêu cầu của giáo viên, môn học.</p>
+          </li>
+          <li>
+            <h3>Xếp tự động</h3>
+            <p>Bấm Cherry để xếp. Bấm lại Cherry hoặc dùng menu Tối ưu để giảm buổi dạy và tiết trống của giáo viên.</p>
+          </li>
+          <li>
+            <h3>Chỉnh, kiểm tra và in</h3>
+            <p>Kéo-thả để đổi chỗ tiết, xem bảng Thống kê, rồi vào In TKB để xuất Excel cho lớp, giáo viên và toàn trường.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="ab-section hd-doc" id="agent">
+      <div class="ab-container">
+        <div class="ab-head">
+          <p class="ab-kicker">Cherry Agent</p>
+          <h2>Cherry Agent: bật ở đâu, cài thế nào</h2>
+        </div>
+        <p class="hd-lead">Cherry Agent giúp xếp thời khóa biểu mạnh hơn: khi Agent bật, nút 🍒 Cherry và menu Tối ưu chạy bằng ứng dụng Cherry.exe cài trên máy tính của thầy cô. Dữ liệu của trường vẫn lưu trên tkbcherry.com như bình thường.</p>
+        <div class="hd-agent">
+          <div class="hd-box">
+            <h3>Công tắc Agent nằm ở đâu</h3>
+            <ul>
+              <li>Mở trang <b>Sắp xếp TKB</b>. Công tắc <b>Agent</b> nằm ở bên phải thanh công cụ, phía trước nút <b>Home</b>.</li>
+              <li>Agent <b>bật sẵn</b> trên máy tính Windows. Bấm vào công tắc để tắt hoặc bật lại.</li>
+              <li>Điện thoại, máy tính bảng và máy Mac không có công tắc này: phần mềm tự xếp trên máy chủ, thầy cô không cần cài gì.</li>
+              <li>Chấm tròn trên nút 🍒 Cherry cho biết trạng thái: <b>xanh lá</b> là Agent đã sẵn sàng, <b>cam</b> là Agent bật nhưng Cherry.exe chưa chạy, <b>xanh dương</b> là đang xếp trên máy chủ.</li>
+            </ul>
+          </div>
+          <div class="hd-box">
+            <h3>Cài Cherry.exe (làm một lần)</h3>
+            <ol>
+              <li>Bấm nút <b>🍒 Cherry</b>. Nếu máy chưa có Cherry.exe, phần mềm hiện hộp “Cherry Agent cần Cherry.exe”. Bấm <b>Tải về</b> (khoảng 100 MB).</li>
+              <li>Mở file <b>Cherry.zip</b> vừa tải, bấm đúp <b>Cherry.exe</b> bên trong. Windows hỏi thì chọn <b>Run</b>; nếu hiện cảnh báo thì bấm <b>More info → Run anyway</b>. Không cần quyền quản trị.</li>
+              <li>Đợi khoảng 1 phút. Khi biểu tượng 🍒 hiện cạnh đồng hồ của Windows, trang Sắp xếp tự xếp tiếp, không cần bấm lại.</li>
+            </ol>
+          </div>
+          <div class="hd-box">
+            <h3>Khi trình duyệt hỏi</h3>
+            <ul>
+              <li>Chrome hỏi <b>“Mở …?”</b>: bấm <b>Mở</b>, nên tick “Luôn cho phép” để lần sau khỏi hỏi.</li>
+              <li>Chrome hỏi cho phép trang <b>truy cập ứng dụng trên thiết bị</b>: bấm <b>Cho phép</b>.</li>
+              <li>Lỡ bấm Chặn, phần mềm báo “Chrome đang chặn Cherry Agent”: bấm biểu tượng bên trái thanh địa chỉ → <b>Cài đặt trang web</b> → chọn <b>Cho phép</b> ở mục truy cập mạng cục bộ / ứng dụng trên thiết bị, rồi bấm F5.</li>
+              <li>Hộp “Chưa mở được Cherry Agent”: mở ứng dụng Cherry trên máy rồi bấm <b>Thử lại</b>.</li>
+            </ul>
+          </div>
+          <div class="hd-box">
+            <h3>Khi không muốn dùng Agent</h3>
+            <ul>
+              <li>Máy không cài được Cherry.exe (máy cơ quan khóa cài đặt, máy mượn…): gạt công tắc Agent sang tắt, hoặc bấm <b>Tắt Agent, xếp trên máy chủ</b> ngay trong hộp cài đặt. Nút Cherry và Tối ưu vẫn dùng được.</li>
+              <li>Ô <b>⏱</b> cạnh menu Tối ưu chọn thời gian cho mỗi lượt xếp: 1, 2 hoặc 3 phút (mặc định 2 phút).</li>
+              <li>Bấm <b>Dừng</b> lúc nào cũng được: phần mềm giữ lại bản xếp tốt nhất đã tìm thấy.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="ab-section ab-section--soft hd-doc" id="truong-hop-dac-biet">
+      <div class="ab-container">
+        <div class="ab-head">
+          <p class="ab-kicker">Tình huống thường gặp</p>
+          <h2>Một số trường hợp đặc biệt của trường</h2>
+        </div>
+        <p class="hd-lead">Mỗi trường có đặc thù riêng. Dưới đây là những tình huống hay gặp và chỗ khai báo trong phần mềm. Các mục “Yêu cầu” đều nằm trong nút <b>Yêu cầu</b> ở trang Sắp xếp TKB; khai báo xong bấm 🍒 Cherry để xếp lại.</p>
+        <div class="hd-cases">
+          <article class="hd-case">
+            <h3>Trường có 2 cơ sở (điểm chính, điểm phụ)</h3>
+            <p>Ở bảng <span class="hd-where">Lớp học</span>, chọn cột <b>Địa điểm</b> cho từng lớp (Địa điểm 1, Địa điểm 2…).</p>
+            <p>Sau đó vào <span class="hd-where">Yêu cầu của giáo viên → Yêu cầu của giáo viên dạy nhiều địa điểm</span>: “Chỉ dạy 1 địa điểm/1 buổi”, “Có tiết trống giữa 2 địa điểm” (để có thời gian di chuyển), “Không di chuyển 2 lần/1 buổi giữa các địa điểm”. Hai cơ sở gần nhau thì dùng “Đổi địa điểm ở giờ ra chơi”.</p>
+          </article>
+          <article class="hd-case">
+            <h3>Lớp học 1 buổi, nghỉ một số buổi hoặc một số tiết</h3>
+            <p>Ở trang Sắp xếp, chọn các ô lớp không học rồi bấm phím <b>X</b> để đặt Nghỉ (bấm <b>Delete</b> để bỏ). Cũng có thể khai báo ở <span class="hd-where">Yêu cầu cố định → Yêu cầu cố định lớp học</span>.</p>
+            <p>Số ô còn lại của lớp phải đủ cho tổng số tiết đã phân công, nếu không sẽ có tiết nằm lại ở ô Chưa phân.</p>
+          </article>
+          <article class="hd-case">
+            <h3>Môn chỉ học buổi chiều hoặc trái buổi</h3>
+            <p>Ví dụ tiếng Anh tăng cường, kỹ năng sống, STEM, tin học quốc tế. Vào <span class="hd-where">Yêu cầu của môn học → Giới hạn buổi của môn học</span>, bỏ dấu ở cột buổi mà môn đó không được học.</p>
+          </article>
+          <article class="hd-case">
+            <h3>Nhiều lớp học chung một tiết, hoặc hai giáo viên cùng dạy</h3>
+            <p>Khai báo ở bảng <span class="hd-where">Dạy ghép</span> (sau bảng Phân công): mỗi dòng là một tiết học chung, chọn các lớp và các giáo viên tham gia. Thời khóa biểu của mỗi lớp đều có tiết đó, còn giáo viên chỉ tính một tiết.</p>
+          </article>
+          <article class="hd-case">
+            <h3>Giáo viên thỉnh giảng, kiêm nhiệm, đi học, con nhỏ</h3>
+            <p><span class="hd-where">Yêu cầu cố định → Yêu cầu cố định giáo viên</span>: chọn giáo viên rồi bấm vào những ô giáo viên đó không dạy (nghỉ cả ngày, cả buổi hoặc từng tiết).</p>
+            <p><span class="hd-where">Yêu cầu của giáo viên → Giới hạn buổi dạy</span>: mỗi ngày tick Sáng là chỉ dạy sáng, tick Chiều là chỉ dạy chiều, tick cả hai là ngày đó chỉ dạy một buổi. “Giới hạn số ngày dạy &amp; buổi dạy/1 tuần” dùng khi giáo viên chỉ đến trường một số ngày.</p>
+          </article>
+          <article class="hd-case">
+            <h3>Tiết cố định: Chào cờ, Sinh hoạt lớp, giờ của trung tâm liên kết</h3>
+            <p>Kéo tiết vào đúng ô rồi <b>bấm đúp</b> để cố định (chữ xanh đậm). Khi xếp tự động, phần mềm không dời tiết cố định.</p>
+          </article>
+          <article class="hd-case">
+            <h3>Tiết đôi, tiết liền và giờ ra chơi</h3>
+            <p><span class="hd-where">Yêu cầu của môn học → Số buổi học có tiết học xếp liền</span>: đặt số buổi có 2 tiết liền cho Toán, Văn… Không muốn tiết đôi bị giờ ra chơi cắt ngang thì dùng “Tránh xếp 2 tiết liền qua tiết 2-3” hoặc “qua tiết 3-4”.</p>
+          </article>
+          <article class="hd-case">
+            <h3>Một môn không học quá nhiều tiết trong ngày</h3>
+            <p><span class="hd-where">Yêu cầu của môn học → Giới hạn số tiết/1 ngày</span> và “Giới hạn số tiết/1 buổi”. Ví dụ Toán, Văn, tiếng Anh tối đa 2 tiết mỗi ngày. Muốn môn ít tiết được rải ra trong tuần, dùng “Học cách ngày”.</p>
+          </article>
+          <article class="hd-case">
+            <h3>Môn tránh một số tiết (Thể dục tránh tiết 5 sáng, tiết 1 chiều)</h3>
+            <p><span class="hd-where">Yêu cầu cố định → Yêu cầu cố định môn học</span>: chọn môn rồi bấm vào những ô môn đó không được xếp.</p>
+          </article>
+          <article class="hd-case">
+            <h3>Phòng máy, sân tập, phòng bộ môn có hạn</h3>
+            <p><span class="hd-where">Giới hạn số tiết/1 thời điểm</span>: giới hạn số lớp cùng học một môn hoặc một nhóm môn trong cùng một tiết, ví dụ tối đa 2 lớp học Tin cùng lúc vì trường có 2 phòng máy.</p>
+          </article>
+          <article class="hd-case">
+            <h3>Xếp xong vẫn còn tiết ở ô Chưa phân</h3>
+            <p>Bấm 🍒 Cherry thêm một lượt, phần mềm xếp tiếp từ bản đang có. Nếu vẫn còn, thường là yêu cầu quá chặt: giáo viên có số tiết nhiều hơn số ô được phép dạy, hoặc lớp có số tiết nhiều hơn số ô không nghỉ. Nới yêu cầu của đúng giáo viên, lớp đó rồi xếp lại.</p>
+          </article>
+          <article class="hd-case">
+            <h3>Trường hợp khác</h3>
+            <p>Trường có đặc thù chưa nêu ở đây, thầy cô gọi hoặc nhắn Zalo <a href="https://zalo.me/0352261815" target="_blank" rel="noopener">0352 261 815</a> để được hướng dẫn cách khai báo.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="ab-cta">
+      <div class="ab-container">
+        <h2>Sẵn sàng xếp thời khóa biểu của trường?</h2>
+        <div class="ab-cta-row">
+          <a class="ab-btn ab-btn-primary" href="/#authCard">Đăng nhập hoặc đăng ký</a>
+          <a class="ab-btn ab-btn-ghost" href="https://zalo.me/0352261815" target="_blank" rel="noopener">Nhắn Zalo hỗ trợ</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="ab-footer">
+    <div class="ab-container">
+      <div class="ab-footer-grid">
+        <div>
+          <a class="ab-brand" href="/">
+            <img src="/assets/cherry-scheduler-logo.png?v=2" width="34" height="34" alt="" />
+            <span>Cherry Scheduler</span>
+          </a>
+          <p>Phần mềm xếp thời khóa biểu tự động cho trường tiểu học, THCS và trung tâm GDNN-GDTX. Xếp nhanh, chuẩn xác – Nhàn hơn mỗi ngày.</p>
+        </div>
+        <div>
+          <h2>Liên kết</h2>
+          <ul>
+            <li><a href="/">Trang chủ</a></li>
+            <li><a href="/huong-dan">Hướng dẫn sử dụng</a></li>
+            <li><a href="/privacy">Chính sách bảo mật</a></li>
+            <li><a href="/terms">Điều khoản sử dụng</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2>Liên hệ</h2>
+          <ul>
+            <li>424 đường Nhuận Đức, xã Nhuận Đức, TP. Hồ Chí Minh</li>
+            <li>Điện thoại: <a href="tel:+84352261815">0352 261 815</a> · <a href="https://zalo.me/0352261815" target="_blank" rel="noopener">Zalo</a></li>
+            <li>Email: <a href="mailto:contact@tkbcherry.com">contact@tkbcherry.com</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="ab-footer-bottom">© 2026 Cherry Scheduler · Cherry Software</div>
+    </div>
+  </footer>
+
+  <script>
+  (function(){
+    var video = document.getElementById("hdVideo");
+    var buttons = Array.prototype.slice.call(document.querySelectorAll("#hdChapters .hd-chapter"));
+    if(!video || !buttons.length) return;
+    var starts = buttons.map(function(b){ return Number(b.getAttribute("data-t")) || 0; });
+    function mark(){
+      var t = video.currentTime || 0, idx = 0;
+      for(var i = 0; i < starts.length; i++){ if(t + 0.25 >= starts[i]) idx = i; }
+      buttons.forEach(function(b, i){
+        if(i === idx) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
+      });
+    }
+    buttons.forEach(function(b, i){
+      b.addEventListener("click", function(){
+        function go(){
+          video.currentTime = starts[i];
+          var p = video.play();
+          if(p && typeof p.catch === "function") p.catch(function(){});
+          mark();
+        }
+        if(video.readyState >= 1) go();
+        else { video.addEventListener("loadedmetadata", go, { once: true }); video.load(); }
+        if(window.matchMedia && window.matchMedia("(max-width: 900px)").matches){
+          video.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      });
+    });
+    video.addEventListener("timeupdate", mark);
+    video.addEventListener("seeked", mark);
+  })();
+  </script>
+</body>
+</html>

@@ -15,6 +15,7 @@ import os
 import sys
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -245,6 +246,19 @@ class AvailableTests(unittest.TestCase):
 
 @unittest.skipUnless(HAS_ORTOOLS, "ortools CP-SAT khong co san")
 class LaneContractTests(unittest.TestCase):
+    def test_request_seed_outside_int32_still_solves(self) -> None:
+        # Production joint relocation forwarded the backend's canonical seed to
+        # SatParameters.random_seed (int32), raising before Solve was called.
+        P, soft, classes = _latin()
+        for seed in (825714465373582943, -(2**63), 2**31 - 1):
+            with self.subTest(seed=seed):
+                cells, info = cpsat_lns.build_and_solve(
+                    P, soft, classes, "gap1", time_limit=5, workers=1,
+                    seed=seed, require_improve=False,
+                )
+                self.assertIsNotNone(cells, info)
+                self.assertIn(info["status"], ("OPTIMAL", "FEASIBLE"))
+
     def _run_lane(self, lane: str) -> None:
         P, soft, classes = _latin()
         ok, reason = _hard_ok(P, soft.grid)
@@ -334,10 +348,13 @@ class LaneContractTests(unittest.TestCase):
         cpsat_lns.revert(soft, journal)
 
     def test_location_rule_teacher_is_frozen_automatically(self) -> None:
+        # 05/10: luat dia diem da ma hoa trong mo hinh (test_engine_v3_shared_busy_loc_min);
+        # dong bang tu dong chi con khi tat bang TKB_CPSAT_LOC=0.
         P, soft, classes = _latin()
         P.teacher_rules[2] = TeacherRule(loc_gap=(True,) * 12)
         P.teacher_loc_rules[2] = True
-        cells, info = cpsat_lns.build_and_solve(P, soft, classes, "gap1", time_limit=15.0, workers=2)
+        with mock.patch.dict(os.environ, {"TKB_CPSAT_LOC": "0"}):
+            cells, info = cpsat_lns.build_and_solve(P, soft, classes, "gap1", time_limit=15.0, workers=2)
         self.assertEqual(info["frozen_teachers"], 1)
         self.assertEqual(info["frozen_reasons"], {2: "location_rules"})
         if cells is not None:

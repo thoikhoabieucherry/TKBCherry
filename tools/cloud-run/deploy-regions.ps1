@@ -18,7 +18,7 @@ param(
     [string]$SourceRegion = 'asia-southeast2',
 
     [ValidatePattern('^[a-z][a-z0-9-]{0,61}[a-z0-9]$')]
-    [string]$ServiceName = 'tkb-solver',
+    [string]$ServiceName = 'cherry-solver',
 
     [string]$Image = '',
 
@@ -44,7 +44,7 @@ param(
     [int]$RegionCpuQuota = 20,
 
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._+-]*@[A-Za-z0-9.-]+\.iam\.gserviceaccount\.com$')]
-    [string]$InvokerServiceAccount = "tkb-cloud-run-invoker@$ProjectId.iam.gserviceaccount.com",
+    [string]$InvokerServiceAccount = "cherry-invoker@$ProjectId.iam.gserviceaccount.com",
 
     [string]$RuntimeServiceAccount = '',
 
@@ -233,7 +233,7 @@ foreach ($region in $Regions) {
         "--max-instances=$regionDeployMax",
         '--cpu-boost',
         '--no-allow-unauthenticated',
-        '--labels=app=tkb-cherry,component=solver,runtime=cloud-run',
+        '--labels=app=cherry,component=solver,runtime=cloud-run',
         "--set-env-vars=TKB_CLOUD_RUN_QUIET=1,TKB_CLOUD_RUN_MAX_WORKERS=$Cpu,TKB_CPSAT_THREADS=$Cpu,TKB_CLOUD_RUN_MAX_SOLVE_SECONDS=285,TKB_CLOUD_RUN_SOLVER_DIGEST=$SolverDigest",
         "--project=$ProjectId",
         '--quiet'

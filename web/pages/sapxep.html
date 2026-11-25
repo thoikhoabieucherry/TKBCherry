@@ -16,7 +16,7 @@
 <meta name="theme-color" content="#ffffff">
 
 <link rel="stylesheet" href="../tokens.css?v=20260710-light-v1">
-<link rel="stylesheet" href="phanmon.css?v=20260821-unassigned-v4">
+<link rel="stylesheet" href="phanmon.css?v=20260923-loc-edge-v1">
 <link rel="stylesheet" href="../admin-shell.css?v=20260710-app-nav-right-v1">
 <link rel="stylesheet" href="../theme-light.css?v=20260710-stats-zfix-v1">
 <link rel="stylesheet" href="../runtime.css?v=20260710-runtime-v1">
@@ -527,6 +527,14 @@ body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helpe
 
 body.planner-shell #btnAgentHelper[hidden] {
   display: none !important;
+}
+
+/* 24/11: nút "Hướng dẫn" (video trong app). Điện thoại/tablet hẹp: thanh công cụ đã kín, ẩn nút
+   (thông báo video vẫn hiện, và thanh menu trang nhập liệu luôn có nút Hướng dẫn). */
+@media (max-width: 900px) {
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > #btnGuideVideo {
+    display: none !important;
+  }
 }
 
 body.planner-shell #btnAgentHelper .agent-ai-icon {
@@ -1667,6 +1675,8 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-expanded::after {
 <!-- 22/08 (khuya, chỉ đạo chủ dự án): bỏ nút "Lỗi" (nhật ký lỗi xếp), giữ nút "RB". -->
 
         <button id="btnHome" class="primary save-button" type="button" title="Về trang chủ" aria-label="Về trang chủ" onclick="saveAndBack()">Home</button>
+        <!-- 24/11: video hướng dẫn xem ngay trong app (../shared/guide-notice.js) -->
+        <button id="btnGuideVideo" class="agent-helper-button" type="button" title="Xem video hướng dẫn 9 bước: từ nhập liệu đến xếp TKB hoàn chỉnh" aria-label="Xem video hướng dẫn" onclick="window.TKBGuide&amp;&amp;window.TKBGuide.open()">Hướng dẫn</button>
         <button id="statsToggle" class="stats-toggle" type="button" onclick="toggleStatsPopover(event)" title="Thống kê thời khóa biểu" aria-label="Thống kê thời khóa biểu" aria-expanded="false"><span class="toolbar-label-full" aria-hidden="true">Thống kê</span><span class="toolbar-label-compact" aria-hidden="true"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M4 20V13h4v7M10 20V9h4v11M16 20V5h4v15M3 20h18"/></svg></span></button>
         <div id="statsPopover" class="stats-popover" hidden>
           <div id="statsBox" class="stats-box"></div>
@@ -1835,14 +1845,15 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-expanded::after {
 <script src="../vendor/sql-wasm.js"></script>
 <script src="../kvdb.js?v=20260707-vendor-local-v1"></script>
 <script src="tkb-fet-engine.js?v=20260902-ghep-no-teacher-v1"></script>
-<script src="phanmon.js?v=20260903-no-fet-optimize-v1"></script>
-<script src="tkb-constraints.js?v=20260902-ghep-no-teacher-v1"></script>
-<script src="tkb-constraints-menu.js?v=20260808-v1192-assigned-only-all-statistics-v1"></script>
+<script src="phanmon.js?v=20261030-drop-subject-alias-v1"></script>
+<script src="tkb-constraints.js?v=20260921-grade-zero-periods-v1"></script>
+<script src="tkb-constraints-menu.js?v=20260920-presence-forecast-v1"></script>
 <script src="tkb-gv-template.js"></script>
 <script src="tkb-export.js?v=20260829-day-ghep-v6"></script>
 <script src="tkb-word-export.js?v=20260829-day-ghep-v6"></script>
 <script src="tkb-student-excel-export.js?v=20260903-ghep-joint-class-v1"></script>
-<script src="tkb-rust-bridge.js?v=20260903-no-fet-optimize-v1"></script>
+<script src="tkb-rust-bridge.js?v=20260920-soft-stop-visible-v1"></script>
+<script src="../shared/guide-notice.js?v=20261124-guide-v1"></script>
 
 <script>
 // 19/08: chon thuat toan backend cho tung nut (mac dinh = bo giai cu)

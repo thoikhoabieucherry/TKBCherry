@@ -1,0 +1,837 @@
+/*
+ * Cherry Scheduler — public website styles (07/10/2026).
+ *
+ * Used by the public landing sections on the home page (/) and by the static
+ * information pages /about, /privacy and /terms. Everything here is scoped to
+ * `lp-*` classes or to `.auth-landing` (a body class only the home page sets),
+ * so the login card, school portal, admin and planner styles are untouched.
+ */
+
+:root {
+  --lp-text: #0f172a;
+  --lp-muted: #475569;
+  --lp-subtle: #64748b;
+  --lp-border: #e2e8f0;
+  --lp-bg: #ffffff;
+  --lp-bg-alt: #f8fafc;
+  --lp-primary: #2563eb;
+  --lp-primary-hover: #1d4ed8;
+  --lp-cherry: #e11d48;
+  --lp-cherry-soft: #fff1f2;
+  --lp-radius: 14px;
+  --lp-max: 1160px;
+  --lp-nav-h: 60px;
+}
+
+html {
+  scroll-padding-top: calc(var(--lp-nav-h) + 12px);
+}
+
+/* ── Top navigation (all public pages) ── */
+.lp-nav {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: rgb(255 255 255 / 94%);
+  border-bottom: 1px solid var(--lp-border);
+  backdrop-filter: saturate(1.4) blur(8px);
+  -webkit-backdrop-filter: saturate(1.4) blur(8px);
+}
+
+.lp-nav-inner {
+  max-width: 1440px;
+  height: var(--lp-nav-h);
+  margin: 0 auto;
+  padding: 0 clamp(16px, 4vw, 40px);
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.lp-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--lp-text);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.lp-brand img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+
+.lp-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin-left: auto;
+}
+
+.lp-nav-links a {
+  color: var(--lp-muted);
+  font-size: 0.93rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.lp-nav-links a:hover,
+.lp-nav-links a[aria-current="page"] {
+  color: var(--lp-text);
+}
+
+.lp-nav-cta {
+  display: inline-flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 10px;
+  background: var(--lp-primary);
+  color: #fff;
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.lp-nav-cta:hover {
+  background: var(--lp-primary-hover);
+}
+
+@media (max-width: 759px) {
+  .lp-nav-links {
+    display: none;
+  }
+
+  .lp-nav-cta {
+    margin-left: auto;
+  }
+}
+
+/* ── Home page: keep the login screen, but let the page scroll ── */
+.auth-body.auth-home.auth-landing {
+  height: auto;
+  min-height: 100dvh;
+  display: block;
+  overflow-x: hidden;
+  overflow-y: visible;
+}
+
+.auth-landing .auth-shell {
+  min-height: calc(100dvh - var(--lp-nav-h));
+}
+
+@media (min-width: 1100px) {
+  .auth-landing .auth-shell {
+    grid-template-columns: minmax(0, 3fr) minmax(420px, 2fr);
+  }
+}
+
+.auth-landing .auth-brand-inner {
+  max-width: 600px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.auth-landing .auth-brand-copy {
+  text-align: left;
+}
+
+.auth-landing .auth-logo-img {
+  width: 76px;
+  height: 76px;
+  margin-bottom: 18px;
+}
+
+.auth-landing .auth-panel-brand h1 {
+  margin-bottom: 10px;
+}
+
+.auth-landing .lp-hero-title {
+  margin: 0 0 14px;
+  color: var(--lp-text);
+  font-size: clamp(1.3rem, 2.1vw, 1.85rem);
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+}
+
+.auth-landing .auth-panel-brand p.lp-hero-sub {
+  max-width: 58ch;
+  margin: 0 0 12px;
+  color: var(--lp-muted) !important;
+  font-size: clamp(0.95rem, 1.2vw, 1.05rem);
+  line-height: 1.65;
+}
+
+.auth-landing .auth-brand-tagline {
+  margin: 0 0 22px;
+  white-space: normal;
+}
+
+.lp-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 0 22px;
+}
+
+.lp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 20px;
+  border-radius: 11px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.lp-btn-primary {
+  background: var(--lp-primary);
+  color: #fff;
+  box-shadow: 0 6px 18px rgb(37 99 235 / 22%);
+}
+
+.lp-btn-primary:hover {
+  background: var(--lp-primary-hover);
+}
+
+.lp-btn-ghost {
+  background: #fff;
+  color: var(--lp-text);
+  border: 1px solid #cbd5e1;
+}
+
+.lp-btn-ghost:hover {
+  border-color: #93c5fd;
+  background: #f8fafc;
+}
+
+.lp-facts-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lp-facts-inline li {
+  padding: 5px 11px;
+  border: 1px solid var(--lp-border);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 80%);
+  color: var(--lp-muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+@media (max-width: 899px) {
+  .auth-landing .auth-shell {
+    min-height: auto;
+  }
+
+  .auth-landing .auth-brand-copy {
+    text-align: center;
+    align-items: center;
+  }
+
+  /* Mobile: branding + login first. The long description, CTAs and fact
+     chips are still in the HTML (crawlers read them) and the same content is
+     shown in the Product / About sections below the login card. */
+  .auth-landing .auth-panel-brand {
+    padding-top: 20px;
+    padding-bottom: 8px;
+  }
+
+  .auth-landing .auth-logo-img {
+    width: 56px;
+    height: 56px;
+    margin-bottom: 10px;
+  }
+
+  .auth-landing .lp-hero-title {
+    margin-bottom: 8px;
+    font-size: 1.15rem;
+  }
+
+  .auth-landing .auth-brand-tagline {
+    margin-bottom: 0;
+  }
+
+  .auth-landing .auth-panel-brand p.lp-hero-sub,
+  .auth-landing .lp-cta-row,
+  .auth-landing .lp-facts-inline {
+    display: none;
+  }
+
+  .auth-landing .auth-panel-form {
+    padding-top: 12px;
+  }
+}
+
+/* ── Content sections ── */
+.lp-section {
+  position: relative;
+  z-index: 1;
+  padding: clamp(56px, 8vw, 96px) 0;
+  border-top: 1px solid var(--lp-border);
+  background: var(--lp-bg);
+  color: var(--lp-text);
+  font-family: "Outfit", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.lp-section--alt {
+  background: var(--lp-bg-alt);
+}
+
+.lp-container {
+  max-width: var(--lp-max);
+  margin: 0 auto;
+  padding: 0 clamp(20px, 4vw, 40px);
+}
+
+.lp-eyebrow {
+  margin: 0 0 10px;
+  color: var(--lp-cherry);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.lp-h2 {
+  margin: 0 0 18px;
+  color: var(--lp-text);
+  font-size: clamp(1.6rem, 3vw, 2.3rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.lp-lead,
+.lp-section p.lp-lead {
+  max-width: 68ch;
+  margin: 0 0 14px;
+  color: var(--lp-muted);
+  font-size: 1.06rem;
+  line-height: 1.7;
+}
+
+.lp-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: clamp(28px, 5vw, 64px);
+  align-items: center;
+}
+
+.lp-split--top {
+  align-items: start;
+}
+
+.lp-visual {
+  margin: 0;
+  line-height: 0;
+}
+
+.lp-visual svg {
+  display: block;
+  width: 100%;
+  max-width: 500px;
+  height: auto;
+  margin: 0 auto;
+}
+
+.lp-vi {
+  margin: 22px 0 0;
+  padding: 16px 18px;
+  border-left: 3px solid var(--lp-cherry);
+  border-radius: 0 10px 10px 0;
+  background: var(--lp-bg-alt);
+  color: var(--lp-muted);
+  font-size: 0.97rem;
+  line-height: 1.7;
+}
+
+.lp-section--alt .lp-vi {
+  background: #fff;
+}
+
+.lp-vi strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--lp-text);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lp-vi p {
+  margin: 0 0 8px;
+}
+
+.lp-vi p:last-child {
+  margin-bottom: 0;
+}
+
+.lp-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 40px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lp-card {
+  padding: 20px;
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radius);
+  background: #fff;
+}
+
+.lp-card h3 {
+  margin: 0 0 6px;
+  color: var(--lp-text);
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.lp-card p {
+  margin: 0;
+  color: var(--lp-muted);
+  font-size: 0.93rem;
+  line-height: 1.6;
+}
+
+.lp-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: var(--lp-cherry-soft);
+  color: var(--lp-cherry);
+}
+
+.lp-card-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Fact sheet (About section / About page) */
+.lp-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 14px 28px;
+  align-items: baseline;
+  margin: 0;
+  padding: 24px 26px;
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radius);
+  background: #fff;
+}
+
+.lp-facts dt {
+  color: var(--lp-subtle);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.lp-facts dd {
+  margin: 0;
+  color: var(--lp-text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.lp-facts a {
+  color: var(--lp-primary);
+  text-decoration: none;
+}
+
+.lp-facts a:hover {
+  text-decoration: underline;
+}
+
+.lp-link-more {
+  display: inline-block;
+  margin-top: 8px;
+  color: var(--lp-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.lp-link-more:hover {
+  text-decoration: underline;
+}
+
+/* How it works */
+.lp-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin: 40px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: lp-step;
+}
+
+.lp-steps li {
+  position: relative;
+  padding: 20px 20px 20px 20px;
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radius);
+  background: #fff;
+  counter-increment: lp-step;
+}
+
+.lp-steps li::before {
+  content: counter(lp-step);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-bottom: 12px;
+  border-radius: 50%;
+  background: var(--lp-text);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.lp-steps h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.lp-steps p {
+  margin: 0;
+  color: var(--lp-muted);
+  font-size: 0.93rem;
+  line-height: 1.6;
+}
+
+.lp-note {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin: 28px 0 0;
+  padding: 18px 20px;
+  border: 1px dashed #cbd5e1;
+  border-radius: var(--lp-radius);
+  background: #fff;
+}
+
+.lp-badge {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4338ca;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lp-note p {
+  margin: 0;
+  color: var(--lp-muted);
+  font-size: 0.97rem;
+  line-height: 1.65;
+}
+
+/* Contact */
+.lp-contact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.lp-contact-card {
+  padding: 26px;
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radius);
+  background: #fff;
+}
+
+.lp-contact-card h3 {
+  margin: 0 0 4px;
+  font-size: 1.1rem;
+}
+
+.lp-contact-card address {
+  margin: 0 0 18px;
+  color: var(--lp-muted);
+  font-style: normal;
+  line-height: 1.6;
+}
+
+.lp-contact-label {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--lp-subtle);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lp-email {
+  display: inline-block;
+  margin-bottom: 16px;
+  color: var(--lp-primary);
+  font-size: clamp(1.15rem, 2.2vw, 1.45rem);
+  font-weight: 700;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.lp-email:hover {
+  text-decoration: underline;
+}
+
+.lp-contact-card a {
+  color: var(--lp-primary);
+}
+
+.lp-contact-secondary {
+  margin: 0;
+  color: var(--lp-subtle);
+  font-size: 0.92rem;
+  line-height: 1.7;
+}
+
+/* ── Static information pages (/about, /privacy, /terms) ── */
+.lp-page {
+  margin: 0;
+  background: var(--lp-bg);
+  color: var(--lp-text);
+  font-family: "Outfit", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.lp-page-hero {
+  padding: clamp(48px, 7vw, 80px) 0 clamp(28px, 4vw, 40px);
+  border-bottom: 1px solid var(--lp-border);
+  background: linear-gradient(165deg, #ffffff 0%, #f8fafc 55%, #eff6ff 100%);
+}
+
+.lp-page-hero h1 {
+  margin: 0 0 12px;
+  font-size: clamp(2rem, 4.2vw, 2.9rem);
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+}
+
+.lp-page-hero p {
+  max-width: 70ch;
+  margin: 0;
+  color: var(--lp-muted);
+  font-size: 1.06rem;
+  line-height: 1.7;
+}
+
+.lp-page-hero p.lp-eyebrow {
+  margin: 0 0 10px;
+  color: var(--lp-cherry);
+  font-size: 0.78rem;
+}
+
+.lp-page-hero p.lp-meta {
+  margin-top: 12px;
+  font-size: 0.92rem;
+}
+
+.lp-prose {
+  max-width: 760px;
+  padding: clamp(36px, 5vw, 56px) clamp(20px, 4vw, 40px) clamp(56px, 7vw, 88px);
+  margin: 0 auto;
+  color: #1e293b;
+  font-size: 1rem;
+  line-height: 1.75;
+}
+
+.lp-prose h2 {
+  margin: 40px 0 10px;
+  color: var(--lp-text);
+  font-size: 1.3rem;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.lp-prose h2:first-child {
+  margin-top: 0;
+}
+
+.lp-prose h3 {
+  margin: 24px 0 6px;
+  font-size: 1.05rem;
+}
+
+.lp-prose p,
+.lp-prose ul {
+  margin: 0 0 14px;
+}
+
+.lp-prose ul {
+  padding-left: 22px;
+}
+
+.lp-prose li {
+  margin-bottom: 6px;
+}
+
+.lp-prose a {
+  color: var(--lp-primary);
+}
+
+.lp-prose .lp-facts {
+  margin: 8px 0 24px;
+}
+
+.lp-meta {
+  color: var(--lp-subtle);
+  font-size: 0.92rem;
+}
+
+/* ── Footer (all public pages) ── */
+.lp-footer {
+  position: relative;
+  z-index: 1;
+  border-top: 1px solid var(--lp-border);
+  background: #fff;
+  color: var(--lp-subtle);
+  font-family: "Outfit", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.lp-footer-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px 32px;
+  align-items: center;
+  padding-top: 28px;
+  padding-bottom: 28px;
+}
+
+.lp-footer-brand strong {
+  display: block;
+  color: var(--lp-text);
+  font-size: 1rem;
+}
+
+.lp-footer-brand span {
+  font-size: 0.88rem;
+}
+
+.lp-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  justify-content: flex-end;
+}
+
+.lp-footer a {
+  color: var(--lp-muted);
+  text-decoration: none;
+}
+
+.lp-footer a:hover {
+  color: var(--lp-primary);
+  text-decoration: underline;
+}
+
+.lp-footer-links a {
+  font-size: 0.93rem;
+  font-weight: 500;
+}
+
+.lp-footer-bottom {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--lp-border);
+  font-size: 0.84rem;
+  line-height: 1.6;
+}
+
+.lp-footer-bottom p {
+  margin: 0;
+}
+
+.lp-footer-contact a {
+  color: var(--lp-primary);
+  font-weight: 600;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1023px) {
+  .lp-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 899px) {
+  .lp-split,
+  .lp-contact {
+    grid-template-columns: 1fr;
+  }
+
+  .lp-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lp-footer-inner {
+    grid-template-columns: 1fr;
+  }
+
+  .lp-footer-links {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 559px) {
+  .lp-cards,
+  .lp-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .lp-facts {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    padding: 20px;
+  }
+
+  .lp-facts dd {
+    margin-bottom: 12px;
+  }
+
+  .lp-facts dd:last-child {
+    margin-bottom: 0;
+  }
+
+  .lp-note {
+    flex-direction: column;
+    gap: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-btn {
+    transition: none;
+  }
+}

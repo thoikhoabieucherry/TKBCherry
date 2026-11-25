@@ -59,12 +59,12 @@
     const failure = typeof api.getLastSessionFailure === "function"
       ? api.getLastSessionFailure()
       : null;
-    if(failure?.error === "session_replaced"){
+    if(failure?.error === "session_replaced" || failure?.error === "account_locked"){
+      const fallback = failure.error === "account_locked"
+        ? "Tài khoản hoặc trường đã bị khóa. Liên hệ quản trị."
+        : "Tài khoản đã được đăng nhập ở nơi khác.";
       try{
-        sessionStorage.setItem(
-          AUTH_NOTICE_KEY,
-          failure.message || "Tài khoản đã được đăng nhập ở nơi khác."
-        );
+        sessionStorage.setItem(AUTH_NOTICE_KEY, failure.message || fallback);
       }catch(_){ }
     }
     if(A.expireSession) A.expireSession();

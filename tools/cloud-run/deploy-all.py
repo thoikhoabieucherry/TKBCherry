@@ -26,9 +26,9 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8")
 
 ROOT = Path(__file__).resolve().parents[2]  # goc repo (file nay nam o tools/cloud-run/)
-PROJECT_ID = "project-61ee7855-507e-40a3-879"
+PROJECT_ID = "project-8ce8bf36-3ba7-430f-8f7"
 REGION = "asia-southeast2"
-SERVICE = "tkb-solver"
+SERVICE = "cherry-solver"
 DEPLOY_PS1 = ROOT / "tools" / "cloud-run" / "deploy.ps1"
 PROFILE_OUT = ROOT / "cloud_run_profile_moi_nhat.txt"
 
@@ -53,8 +53,8 @@ def gcloud(args: list[str], *, timeout=600) -> subprocess.CompletedProcess:
     return run([gcloud_path(), *args, f"--project={PROJECT_ID}"], timeout=timeout)
 
 
-INVOKER_SA = f"tkb-cloud-run-invoker@{PROJECT_ID}.iam.gserviceaccount.com"
-RUNTIME_SA = f"tkb-cloud-run-runtime@{PROJECT_ID}.iam.gserviceaccount.com"
+INVOKER_SA = f"cherry-invoker@{PROJECT_ID}.iam.gserviceaccount.com"
+RUNTIME_SA = f"cherry-runtime@{PROJECT_ID}.iam.gserviceaccount.com"
 
 
 def active_account() -> str:
